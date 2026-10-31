@@ -86,6 +86,8 @@
   .tile.on{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold)}
   .tile.on::after{content:"✓";position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:50%;background:var(--gold);color:var(--plum);display:grid;place-items:center;font-weight:800;font-size:14px}
   .tile:disabled{cursor:default}.tile:disabled .ph{filter:grayscale(1) opacity(.5)}
+  .grp{font-size:12px;font-weight:700;color:var(--gold-text);letter-spacing:.08em;margin:4px 0 8px}
+  .tiles + .grp{margin-top:16px}
   .pick-hint{font-size:13px;color:var(--mute);background:#F6F4F8;border-radius:10px;padding:14px;text-align:center}
   .sheet-photo{aspect-ratio:16/9;border-radius:12px;background:#EEE center/cover no-repeat;margin-bottom:12px}
   .chip{flex:none;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
@@ -174,8 +176,13 @@
   const IMG = 'https://web-api.inspireresorts.com/sites/default/files/2024-01/';
   const TOWER_INFO = {
     '輝映樓': { en: 'SUN TOWER', rooms: {
-      '豪華大床房': { img: IMG + 'Sun%20Deluxe%20King2.jpg', bed: '1 張大床' },
-      '豪華雙床房': { img: IMG + 'Sun%20Lake%20Deluxe%20Double%20Queen1.jpg', bed: '2 張床' } } },
+      '豪華大床房': { img: IMG + 'Sun%20Deluxe%20King2.jpg', bed: '1 張大床・45㎡' },
+      '豪華雙床房': { img: IMG + 'Sun%20Lake%20Deluxe%20Double%20Queen1.jpg', bed: '2 張雙人床・45㎡' },
+      '單間套房特大床': { img: IMG + 'Sun%20Studio%20Suite2.jpeg', bed: '1 張大床・68㎡', suite: true },
+      '輝映套房特大床': { img: IMG + 'Sun%20Tower%20Sun%20Suite1.jpg', bed: '1 張大床・88㎡', suite: true },
+      '輝映套房雙床': { img: IMG + 'Sun%20Tower%20Sun%20Suite1.jpg', bed: '2 張雙人床・88㎡', suite: true },
+      '迎仕柏套房特大床': { img: IMG + 'Sun%20Tower%20Inspire%20Suite_1_0.jpg', bed: '1 張大床・131㎡', suite: true },
+      '迎仕柏套房雙床': { img: IMG + 'Sun%20Tower%20Inspire%20Suite_1_0.jpg', bed: '2 張雙人床・131㎡', suite: true } } },
     '海洋樓': { en: 'OCEAN TOWER', rooms: {
       '豪華大床房': { img: IMG + 'Ocean%20Deluxe%20King3_0.jpg', bed: '1 張大床・45㎡' },
       '豪華雙床房': { img: IMG + 'Ocean%20Premier%20Double%20Queen1.jpg', bed: '2 張床・45㎡' } } },
@@ -421,13 +428,21 @@
         <div class="hint">入住 ${esc(c.checkin)}・退房 ${esc(c.checkout)}</div>
       </div>`;
     function tiles() {
-      $('roomTiles').innerHTML = R.tower
-        ? `<div class="tiles">${c.rooms.map(rm => {
-            const ri = roomInfo(R.tower, rm) || {};
-            return `<button type="button" class="tile ${rm === R.room ? 'on' : ''}" data-v="${esc(rm)}">
-              <div class="ph" ${bg(ri.img)}></div><div class="cap"><b>${esc(rm)}</b><small>${esc(ri.bed || '')}</small></div></button>`;
-          }).join('')}</div>`
-        : `<div class="pick-hint">先選擇樓，就會看到房型照片</div>`;
+      const list = (c.rooms && c.rooms[R.tower]) || [];
+      if (R.room && list.indexOf(R.room) < 0) R.room = '';
+      const tile = rm => {
+        const ri = roomInfo(R.tower, rm) || {};
+        return `<button type="button" class="tile ${rm === R.room ? 'on' : ''}" data-v="${esc(rm)}">
+          <div class="ph" ${bg(ri.img)}></div><div class="cap"><b>${esc(rm)}</b><small>${esc(ri.bed || '')}</small></div></button>`;
+      };
+      const normal = list.filter(rm => !(roomInfo(R.tower, rm) || {}).suite);
+      const suites = list.filter(rm => (roomInfo(R.tower, rm) || {}).suite);
+      $('roomTiles').innerHTML = !R.tower
+        ? `<div class="pick-hint">先選擇樓，就會看到房型照片</div>`
+        : suites.length
+          ? `<div class="grp">豪華客房</div><div class="tiles">${normal.map(tile).join('')}</div>
+             <div class="grp">套房</div><div class="tiles">${suites.map(tile).join('')}</div>`
+          : `<div class="tiles">${list.map(tile).join('')}</div>`;
       $('roomTiles').querySelectorAll('.tile').forEach(t => t.onclick = () => { R.room = t.dataset.v; tiles(); sync(); });
     }
     bindSeg('tower', v => { R.tower = v; tiles(); sync(); });
@@ -605,13 +620,13 @@
     profile: { memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', registered: params.get('reg') !== '0' },
     rooms: [
       { kind: 'room', id: 'R0001', status: '已確認', code: 'INS2611-0502', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '海洋樓', room: '豪華雙床房', ci: '2026-11-20', co: '2026-11-23', nights: 3, people: 2 },
-      { kind: 'room', id: 'R0004', status: '待處理', code: '', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '輝映樓', room: '豪華大床房', ci: '2026-12-18', co: '2026-12-21', nights: 3, people: 1 },
+      { kind: 'room', id: 'R0004', status: '待處理', code: '', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '輝映樓', room: '輝映套房特大床', ci: '2026-12-18', co: '2026-12-21', nights: 3, people: 1 },
     ],
     cars: [
       { kind: 'car', id: 'C0002', status: '已安排', type: '接機', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', flight: 'CI160', ftime: '2026-11-20 14:30', pickup: '', pax: 2 },
       { kind: 'car', id: 'C0004', status: '待安排', type: '送機', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', flight: 'BR160', ftime: '2026-11-23 14:30', pickup: '2026-11-23 11:30', pax: 2 },
     ],
-    cfg: { towers: ['輝映樓', '海洋樓'], rooms: ['豪華大床房', '豪華雙床房'], maxRoomPeople: 2, maxCarPax: 10, checkin: '15:00', checkout: '11:00',
+    cfg: { towers: ['輝映樓', '海洋樓'], rooms: { '輝映樓': ['豪華大床房', '豪華雙床房', '單間套房特大床', '輝映套房特大床', '輝映套房雙床', '迎仕柏套房特大床', '迎仕柏套房雙床'], '海洋樓': ['豪華大床房', '豪華雙床房'] }, maxRoomPeople: 2, maxCarPax: 10, checkin: '15:00', checkout: '11:00',
       noteDepart: '上車地點一律為 VIP LOBBY', noteArrive: '接機工作人員會舉著 INSPIRE 的牌子等候您', today: '2026-10-31' },
   };
   let seq = 5;
