@@ -70,6 +70,24 @@
   .bk-head.grey{background:#5B5560}
   .bk-head small{display:block;color:var(--gold);font-size:10px;letter-spacing:.08em;font-weight:700}
   .bk-head b{font-size:17px}
+  .bk-photo{position:relative;aspect-ratio:16/9;background:#2B1B3D center/cover no-repeat}
+  .bk-photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,12,28,0) 35%,rgba(20,12,28,.82))}
+  .bk-photo .ov{position:absolute;left:16px;right:16px;bottom:12px;z-index:1;display:flex;justify-content:space-between;align-items:flex-end;gap:10px;color:#fff}
+  .bk-photo .ov small{display:block;color:var(--gold);font-size:10px;letter-spacing:.08em;font-weight:700}
+  .bk-photo .ov b{font-size:18px;text-shadow:0 1px 6px rgba(0,0,0,.35)}
+  .bk.off .bk-photo{filter:grayscale(1) opacity(.75)}
+  .tiles{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+  .tile{position:relative;border:2px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;padding:0;text-align:left;cursor:pointer;transition:border-color .15s,transform .15s}
+  .tile:active{transform:scale(.98)}
+  .tile .ph{aspect-ratio:4/3;background:#EEE center/cover no-repeat}
+  .tile .cap{padding:9px 10px 10px}
+  .tile .cap b{display:block;font-size:15px}
+  .tile .cap small{display:block;font-size:12px;color:var(--mute)}
+  .tile.on{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold)}
+  .tile.on::after{content:"✓";position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:50%;background:var(--gold);color:var(--plum);display:grid;place-items:center;font-weight:800;font-size:14px}
+  .tile:disabled{cursor:default}.tile:disabled .ph{filter:grayscale(1) opacity(.5)}
+  .pick-hint{font-size:13px;color:var(--mute);background:#F6F4F8;border-radius:10px;padding:14px;text-align:center}
+  .sheet-photo{aspect-ratio:16/9;border-radius:12px;background:#EEE center/cover no-repeat;margin-bottom:12px}
   .chip{flex:none;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
   .chip.ok{background:var(--ok-bg);color:var(--ok)}
   .chip.wait{background:var(--warn-bg);color:var(--warn)}
@@ -151,6 +169,25 @@
     car: { type: '', flight: '', fdate: '', ftime: '', pdate: '', ptime: '', pax: 1, pickupTouched: false },
     reg: null,
   };
+
+  /* ---------- 房型照片（官網 inspireresorts.com） ---------- */
+  const IMG = 'https://web-api.inspireresorts.com/sites/default/files/2024-01/';
+  const TOWER_INFO = {
+    '輝映樓': { en: 'SUN TOWER', rooms: {
+      '豪華大床房': { img: IMG + 'Sun%20Deluxe%20King2.jpg', bed: '1 張大床' },
+      '豪華雙床房': { img: IMG + 'Sun%20Lake%20Deluxe%20Double%20Queen1.jpg', bed: '2 張床' } } },
+    '海洋樓': { en: 'OCEAN TOWER', rooms: {
+      '豪華大床房': { img: IMG + 'Ocean%20Deluxe%20King3_0.jpg', bed: '1 張大床・45㎡' },
+      '豪華雙床房': { img: IMG + 'Ocean%20Premier%20Double%20Queen1.jpg', bed: '2 張床・45㎡' } } },
+    '翠林樓': { en: 'FOREST TOWER', rooms: {
+      '豪華大床房': { img: IMG + 'Forest%20Deluxe%20King.jpg', bed: '1 張大床' },
+      '豪華雙床房': { img: IMG + 'Forest_Deluxe_Double_Queen.jpg', bed: '2 張床' } } },
+  };
+  function roomInfo(tower, room) {
+    const t = TOWER_INFO[tower];
+    return (t && t.rooms[room]) || null;
+  }
+  const bg = url => url ? `style="background-image:url('${url.replace(/'/g, '%27')}')"` : '';
 
   /* ---------- 日期 ---------- */
   function today() { return S.cfg ? S.cfg.today : new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10); }
@@ -312,9 +349,11 @@
   function card(x) {
     const off = x.status === '已取消';
     const pending = x.status === '待處理' || x.status === '待安排';
-    let body, head;
+    let body, head, photo = '';
     if (x.kind === 'room') {
-      head = `<small>HOTEL · 訂房</small><b>${esc(x.tower)}・${esc(x.room)}</b>`;
+      head = `<small>${esc((TOWER_INFO[x.tower] || {}).en || 'HOTEL')} · 訂房</small><b>${esc(x.tower)}・${esc(x.room)}</b>`;
+      const ri = roomInfo(x.tower, x.room);
+      if (ri) photo = `<div class="bk-photo" ${bg(ri.img)}><div class="ov"><div>${head}</div>${chip(x.status)}</div></div>`;
       body = row('會員ID', esc(x.memberId)) +
         row('客人姓名', `${esc(x.nameZh)}<small>${esc(x.nameEn)}</small>`, true) +
         row('樓', esc(x.tower)) + row('房型', esc(x.room)) + '<div class="sep"></div>' +
@@ -336,8 +375,8 @@
           : `<div class="hi txt"><small>接機方式</small><b>${esc(S.cfg.noteArrive)}</b></div>`) +
         (pending ? `<div class="hi wait"><small>狀態</small><b>安排中，小魏安排好車子後會通知您</b></div>` : '');
     }
-    return `<div class="bk" data-id="${esc(x.id)}">
-      <div class="bk-head ${off ? 'grey' : ''}"><div>${head}</div>${chip(x.status)}</div>
+    return `<div class="bk ${off ? 'off' : ''}" data-id="${esc(x.id)}">
+      ${photo || `<div class="bk-head ${off ? 'grey' : ''}"><div>${head}</div>${chip(x.status)}</div>`}
       <div class="bk-body">${body}</div>
       <div class="bk-foot"><span>編號 ${esc(x.id)}</span>${pending ? `<button data-cancel="${esc(x.id)}">取消申請</button>` : ''}</div>
     </div>`;
@@ -369,9 +408,9 @@
       <div class="card">
         <div id="err"></div>
         <label class="f first req">樓</label>
-        ${segHtml('tower', c.towers, R.tower)}
+        ${segHtml('tower', c.towers, R.tower, v => `${esc(v)}<small>${esc((TOWER_INFO[v] || {}).en || '')}</small>`)}
         <label class="f req">房型</label>
-        ${segHtml('roomType', c.rooms, R.room)}
+        <div id="roomTiles"></div>
         <div class="row2" style="margin-top:16px">
           <div><label class="f first req" for="ci">入住日期</label><input type="date" id="ci" min="${today()}" value="${R.ci}"></div>
           <div><label class="f first req" for="co">退房日期</label><input type="date" id="co" min="${R.ci ? addDays(R.ci, 1) : addDays(today(), 1)}" value="${R.co}"></div>
@@ -381,8 +420,18 @@
         ${segHtml('people', Array.from({ length: c.maxRoomPeople }, (_, i) => i + 1), R.people, v => v + ' 位')}
         <div class="hint">入住 ${esc(c.checkin)}・退房 ${esc(c.checkout)}</div>
       </div>`;
-    bindSeg('tower', v => { R.tower = v; sync(); });
-    bindSeg('roomType', v => { R.room = v; sync(); });
+    function tiles() {
+      $('roomTiles').innerHTML = R.tower
+        ? `<div class="tiles">${c.rooms.map(rm => {
+            const ri = roomInfo(R.tower, rm) || {};
+            return `<button type="button" class="tile ${rm === R.room ? 'on' : ''}" data-v="${esc(rm)}">
+              <div class="ph" ${bg(ri.img)}></div><div class="cap"><b>${esc(rm)}</b><small>${esc(ri.bed || '')}</small></div></button>`;
+          }).join('')}</div>`
+        : `<div class="pick-hint">先選擇樓，就會看到房型照片</div>`;
+      $('roomTiles').querySelectorAll('.tile').forEach(t => t.onclick = () => { R.room = t.dataset.v; tiles(); sync(); });
+    }
+    bindSeg('tower', v => { R.tower = v; tiles(); sync(); });
+    tiles();
     bindSeg('people', v => { R.people = Number(v); sync(); });
     $('ci').onchange = () => {
       R.ci = $('ci').value;
@@ -400,7 +449,9 @@
   }
   function confirmRoom(n) {
     const R = S.room, p = S.me.profile;
+    const ri = roomInfo(R.tower, R.room);
     openSheet(`<h2>確認訂房需求</h2><p>送出後小魏會幫您訂房，訂好會把訂房代號傳給您。</p>
+      ${ri ? `<div class="sheet-photo" ${bg(ri.img)}></div>` : ''}
       <div class="card" style="margin-bottom:14px;padding:12px 14px">
         ${row('客人姓名', `${esc(p.nameZh)}<small>${esc(p.nameEn)}</small>`, true)}
         ${row('樓／房型', esc(R.tower) + '・' + esc(R.room))}
@@ -553,14 +604,14 @@
   const D = {
     profile: { memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', registered: params.get('reg') !== '0' },
     rooms: [
-      { kind: 'room', id: 'R0001', status: '已確認', code: 'INS2611-0502', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '海洋', room: '雙床', ci: '2026-11-20', co: '2026-11-23', nights: 3, people: 2 },
-      { kind: 'room', id: 'R0004', status: '待處理', code: '', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '太陽', room: '大床', ci: '2026-12-18', co: '2026-12-21', nights: 3, people: 1 },
+      { kind: 'room', id: 'R0001', status: '已確認', code: 'INS2611-0502', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '海洋樓', room: '豪華雙床房', ci: '2026-11-20', co: '2026-11-23', nights: 3, people: 2 },
+      { kind: 'room', id: 'R0004', status: '待處理', code: '', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '輝映樓', room: '豪華大床房', ci: '2026-12-18', co: '2026-12-21', nights: 3, people: 1 },
     ],
     cars: [
       { kind: 'car', id: 'C0002', status: '已安排', type: '接機', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', flight: 'CI160', ftime: '2026-11-20 14:30', pickup: '', pax: 2 },
       { kind: 'car', id: 'C0004', status: '待安排', type: '送機', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', flight: 'BR160', ftime: '2026-11-23 14:30', pickup: '2026-11-23 11:30', pax: 2 },
     ],
-    cfg: { towers: ['太陽', '海洋'], rooms: ['大床', '雙床'], maxRoomPeople: 2, maxCarPax: 10, checkin: '15:00', checkout: '11:00',
+    cfg: { towers: ['輝映樓', '海洋樓'], rooms: ['豪華大床房', '豪華雙床房'], maxRoomPeople: 2, maxCarPax: 10, checkin: '15:00', checkout: '11:00',
       noteDepart: '上車地點一律為 VIP LOBBY', noteArrive: '接機工作人員會舉著 INSPIRE 的牌子等候您', today: '2026-10-31' },
   };
   let seq = 5;
