@@ -20,7 +20,7 @@ const CFG = {
   // 各樓可訂的房型（名稱照官網）
   ROOMS: {
     '輝映樓': ['豪華大床房', '豪華雙床房', '單間套房特大床', '輝映套房特大床', '輝映套房雙床', '迎仕柏套房特大床', '迎仕柏套房雙床'],
-    '海洋樓': ['豪華大床房', '豪華雙床房'],
+    '海洋樓': ['豪華大床房', '豪華雙床房', '海洋套房特大床', '海洋套房雙床', '迎仕柏套房特大床'],
   },
   MAX_ROOM_PEOPLE: 2,
   MAX_CAR_PAX: 10,
@@ -36,6 +36,7 @@ const CFG = {
     WAIVE_DEPOSIT: 'Yes',
     CONTACT: 'Joy Wei in Teams\nWhat\u2019s App',
     REMARK: 'Near Elevator',
+    TIER: 'Royal',               // 「客人」工作表的 Casino Tier 有填就用那個
   },
   // 房型代號：樓 S=輝映 SUN / O=海洋 OCEAN
   ROOM_CODES: {
@@ -892,10 +893,10 @@ function notifyStaff_(kind, item, cust) {
   const staff = readRows_(SHEETS.STAFF).filter(function (s) { return isOn_(s['啟用']) && s['小幫手 userId']; });
   if (!staff.length) { log_('小幫手', '沒有綁定任何使用者，' + item.id + ' 沒有通知到人'); return; }
   const msg = kind === 'room' ? staffRoomFlex_(item, cust) : staffCarFlex_(item, cust);
-  const req = text_(kind === 'room' ? roomReqText_(item, cust) : carReqText_(item, cust));
+  const req = kind === 'room' ? text_(roomReqText_(item, cust)) : null;   // 訂車不需要 Car Req
   const ids = [];
   staff.forEach(function (s) {
-    const res = push_('h', s['小幫手 userId'], [msg, req]);
+    const res = push_('h', s['小幫手 userId'], req ? [msg, req] : [msg]);
     if (res.ok && res.ids) ids.push.apply(ids, res.ids);
     if (!res.ok) log_('小幫手通知失敗', s['名稱'] + '：' + res.error);
   });
@@ -1424,10 +1425,9 @@ function reqDate_(ymd) {
   const p = ymdParts_(ymd);
   return p.length === 3 && p[0] ? p[0] + '/' + Number(p[1]) + '/' + Number(p[2]) : String(ymd || '');
 }
-function reqDT_(dt) { return dt ? reqDate_(String(dt).slice(0, 10)) + ' ' + String(dt).slice(11, 16) : '-'; }
 function patronOf_(x, cust) {
   return { name: x.nameEn || (cust && cust['英文姓名']) || x.nameZh || '-', mmid: x.memberId || (cust && cust['會員ID']) || '-',
-    tier: (cust && cust['Casino Tier']) || '' };
+    tier: (cust && cust['Casino Tier']) || CFG.REQ.TIER };
 }
 function roomReqText_(b, cust) {
   const p = patronOf_(b, cust), R = CFG.REQ;
@@ -1444,21 +1444,6 @@ function roomReqText_(b, cust) {
     'Waive Deposit : ' + R.WAIVE_DEPOSIT,
     'Contact Host : ' + R.CONTACT,
     'Special Request : ' + R.REMARK].join('\n');
-}
-function carReqText_(c, cust) {
-  const p = patronOf_(c, cust), R = CFG.REQ, dep = c.type === '送機';
-  return [dep ? 'Car Req (Drop-off)' : 'Car Req (Pick-up)', R.TEAM,
-    'Patron : ' + p.name,
-    'Patron MMID : ' + p.mmid,
-    'Flight : ' + (c.flight || '-'),
-    (dep ? 'Departure : ' : 'Arrival : ') + reqDT_(c.ftime),
-    dep ? 'Pick-up Time : ' + reqDT_(c.pickup) : null,
-    'Pick-up Point : ' + (dep ? 'VIP LOBBY' : 'Airport (INSPIRE sign)'),
-    'Pax : ' + (c.pax || 1),
-    'Billing : ' + R.BILLING,
-    'Casino Tier : ' + p.tier,
-    'Contact Host : ' + R.CONTACT,
-    'Special Request : ' + (c.note || '-')].filter(function (x) { return x !== null; }).join('\n');
 }
 
 function staffRoomFlex_(b, cust) {
