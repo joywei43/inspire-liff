@@ -1384,11 +1384,38 @@ function stripUndef_(o) { return JSON.parse(JSON.stringify(o)); }
  * LINE API
  * ============================================================ */
 
+/**
+ * LINE 金鑰（兩種設定方式擇一，放在「專案設定 → 指令碼屬性」）：
+ *   A. 長期金鑰：LINE_TOKEN（客人帳號）、HELPER_TOKEN（小幫手）
+ *   B. Channel ID + Channel secret，系統自動換取短效金鑰（15 分鐘，自動更新）：
+ *      LINE_CHANNEL_ID、LINE_CHANNEL_SECRET（客人帳號；在官方帳號後台「設定 → Messaging API」看得到）
+ *      HELPER_CHANNEL_ID、HELPER_CHANNEL_SECRET（小幫手）
+ */
 function token_(who) {
-  const name = who === 'h' ? 'HELPER_TOKEN' : 'LINE_TOKEN';
-  const t = PropertiesService.getScriptProperties().getProperty(name);
-  if (!t) throw new Error('還沒設定' + (who === 'h' ? '小幫手' : '客人') + '帳號的 LINE 金鑰，請執行「② 設定 LINE 金鑰與網址」。');
-  return t;
+  const props = PropertiesService.getScriptProperties();
+  const pre = who === 'h' ? 'HELPER' : 'LINE';
+  const fixed = props.getProperty(pre + '_TOKEN');
+  if (fixed) return fixed;
+  const id = props.getProperty(pre + '_CHANNEL_ID');
+  const secret = props.getProperty(pre + '_CHANNEL_SECRET');
+  if (!id || !secret) {
+    throw new Error('還沒設定' + (who === 'h' ? '小幫手' : '客人') + '帳號的 LINE 金鑰：請在指令碼屬性加上 ' +
+      pre + '_CHANNEL_ID 和 ' + pre + '_CHANNEL_SECRET（或 ' + pre + '_TOKEN）。');
+  }
+  const cache = CacheService.getScriptCache();
+  const ck = 'stl_' + who + '_' + id;
+  const hit = cache.get(ck);
+  if (hit) return hit;
+  const res = UrlFetchApp.fetch('https://api.line.me/oauth2/v3/token', {
+    method: 'post', muteHttpExceptions: true,
+    payload: { grant_type: 'client_credentials', client_id: id, client_secret: secret },
+  });
+  if (res.getResponseCode() !== 200) {
+    throw new Error((who === 'h' ? '小幫手' : '客人') + '帳號的 Channel ID 或 Channel secret 不正確（' + res.getResponseCode() + '）。');
+  }
+  const j = JSON.parse(res.getContentText());
+  cache.put(ck, j.access_token, Math.max(60, Math.min(840, (j.expires_in || 900) - 60)));
+  return j.access_token;
 }
 
 function lineFetch_(who, method, path, payload, extraHeaders) {
