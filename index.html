@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>INSPIRE｜小魏JOY</title>
+<style>
+  :root{
+    --plum:#2B1B3D; --plum-2:#3D2A54; --gold:#C9A45C; --gold-soft:#F6F1E7; --gold-text:#8A6F3A;
+    --ink:#1F1A24; --mute:#8A8494; --line:#E7E2EA; --bg:#F7F5F2; --card:#FFFFFF;
+    --ok:#2F7D4F; --ok-bg:#E7F4EC; --bad:#B4352B; --bad-bg:#FBEAE8; --warn:#7A5600; --warn-bg:#FFF4D6;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+    font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%}
+  button,input,select{font:inherit;color:inherit}
+  [hidden]{display:none!important}
+
+  .top{position:sticky;top:0;z-index:5;background:var(--plum);color:#fff;padding:14px 16px 0;padding-top:calc(14px + env(safe-area-inset-top))}
+  .top-in{max-width:560px;margin:0 auto}
+  .brand{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+  .brand small{display:block;color:var(--gold);font-size:11px;letter-spacing:.12em;font-weight:700}
+  .brand b{font-size:18px}
+  .me{font-size:12px;text-align:right;opacity:.85;line-height:1.35}
+  .me button{background:none;border:0;color:var(--gold);font-size:12px;padding:0;text-decoration:underline;cursor:pointer}
+  .tabs{display:flex;margin-top:10px}
+  .tab{flex:1;background:none;border:0;color:rgba(255,255,255,.62);padding:10px 0 12px;font-weight:600;border-bottom:3px solid transparent;cursor:pointer}
+  .tab.on{color:#fff;border-color:var(--gold)}
+  main{max-width:560px;margin:0 auto;padding:16px 16px calc(110px + env(safe-area-inset-bottom))}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  .card h3{margin:0 0 4px;font-size:17px}
+  .card .sub{margin:0 0 14px;color:var(--mute);font-size:13px}
+  label.f{display:block;font-size:13px;color:var(--mute);margin:16px 0 6px}
+  label.f.first{margin-top:0}
+  .req::after{content:" *";color:var(--bad)}
+  input[type=text],input[type=date],input[type=time]{width:100%;height:48px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#fff;outline:none;min-width:0;-webkit-appearance:none;appearance:none}
+  input:focus{border-color:var(--plum-2);box-shadow:0 0 0 3px rgba(61,42,84,.12)}
+  input.upper{text-transform:uppercase}
+  .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+  .row2 > div{min-width:0}
+  .seg{display:flex;background:#F1EEF3;border-radius:10px;padding:3px;gap:3px}
+  .seg button{flex:1;min-height:44px;border:0;border-radius:8px;background:none;font-weight:600;color:var(--mute);cursor:pointer;line-height:1.25;padding:6px 4px}
+  .seg button small{display:block;font-size:11px;font-weight:500;opacity:.8}
+  .seg button.on{background:#fff;color:var(--plum);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .hint{font-size:12px;color:var(--mute);margin-top:6px}
+  .note{background:var(--gold-soft);color:var(--gold-text);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:16px;font-weight:600}
+  .nights{margin-top:8px;font-size:13px;color:var(--gold-text);min-height:20px}
+  .stepper{display:flex;align-items:center;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;width:180px;background:#fff}
+  .stepper button{width:56px;height:46px;border:0;background:#F6F4F8;font-size:22px;cursor:pointer;color:var(--plum)}
+  .stepper button:disabled{opacity:.35}
+  .stepper span{flex:1;text-align:center;font-weight:700}
+  .err{color:var(--bad);background:var(--bad-bg);border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:12px}
+
+  .bar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:rgba(247,245,242,.96);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  .bar-in{max-width:560px;margin:0 auto}
+  .btn{display:block;width:100%;height:52px;border:0;border-radius:12px;background:var(--plum);color:#fff;font-weight:700;font-size:16px;cursor:pointer;text-align:center;text-decoration:none;line-height:52px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--plum);border:1px solid var(--line)}
+  .btns{display:grid;gap:8px}
+
+  /* 預約清單 */
+  .empty{text-align:center;color:var(--mute);padding:36px 12px}
+  .empty b{display:block;color:var(--ink);font-size:17px;margin-bottom:4px}
+  .empty .btns{max-width:300px;margin:18px auto 0}
+  .bk{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:14px;transition:box-shadow .3s}
+  .bk.hl{box-shadow:0 0 0 2px var(--gold)}
+  .bk-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;background:var(--plum);color:#fff}
+  .bk-head.grey{background:#5B5560}
+  .bk-head small{display:block;color:var(--gold);font-size:10px;letter-spacing:.08em;font-weight:700}
+  .bk-head b{font-size:17px}
+  .chip{flex:none;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+  .chip.ok{background:var(--ok-bg);color:var(--ok)}
+  .chip.wait{background:var(--warn-bg);color:var(--warn)}
+  .chip.off{background:#EEE;color:#777}
+  .bk-body{padding:14px 16px 16px}
+  .r{display:flex;gap:10px;font-size:14px;padding:4px 0}
+  .r > span{width:76px;flex:none;color:var(--mute)}
+  .r > b{flex:1;font-weight:500;min-width:0;word-break:break-word}
+  .r > b.s{font-weight:700}
+  .r small{display:block;color:var(--mute);font-size:12px;font-weight:400}
+  .sep{height:1px;background:var(--line);margin:10px 0}
+  .hi{border-radius:10px;padding:12px 14px;margin-top:12px;background:var(--gold-soft)}
+  .hi small{display:block;font-size:12px;color:var(--gold-text)}
+  .hi b{display:block;font-size:22px;letter-spacing:.02em;word-break:break-all}
+  .hi.wait{background:var(--warn-bg)}.hi.wait small,.hi.wait b{color:var(--warn)}
+  .hi.wait b{font-size:15px}
+  .hi.loc b{font-size:20px}
+  .hi.txt b{font-size:15px;line-height:1.45}
+  .bk-foot{display:flex;justify-content:space-between;align-items:center;padding:0 16px 14px;font-size:12px;color:var(--mute)}
+  .bk-foot button{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 12px;color:var(--bad);font-weight:600;font-size:13px;cursor:pointer}
+  .copy{background:none;border:0;color:var(--gold-text);font-size:12px;text-decoration:underline;padding:0;margin-top:4px;cursor:pointer}
+
+  /* 完成頁、載入 */
+  .center{min-height:70vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px}
+  .center .icon{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;font-size:30px;margin-bottom:14px;background:var(--ok-bg);color:var(--ok)}
+  .center h2{margin:0 0 6px;font-size:21px}
+  .center p{margin:0 0 22px;color:var(--mute);font-size:15px;max-width:320px}
+  .center .btns{width:100%;max-width:320px}
+  .spin{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--plum);animation:sp .8s linear infinite;margin-bottom:14px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .mask{position:fixed;inset:0;background:rgba(20,12,28,.5);display:none;align-items:flex-end;justify-content:center;z-index:20}
+  .mask.on{display:flex}
+  .sheet{background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:20px 16px calc(16px + env(safe-area-inset-bottom))}
+  .sheet h2{margin:0 0 6px;font-size:18px}
+  .sheet p{margin:0 0 16px;color:var(--mute);font-size:14px}
+  .toast{position:fixed;left:50%;top:14px;transform:translate(-50%,-160%);transition:transform .25s;z-index:30;background:var(--ink);color:#fff;padding:11px 16px;border-radius:12px;font-size:14px;max-width:92vw}
+  .toast.on{transform:translate(-50%,0)}
+  .demo{background:#FFF4D6;color:#7A5600;font-size:12px;text-align:center;padding:6px}
+</style>
+</head>
+<body>
+<div class="demo" id="demoBar" hidden>示範模式：資料都是假的，不會送出</div>
+
+<header class="top" id="top" hidden>
+  <div class="top-in">
+    <div class="brand">
+      <div><small>INSPIRE · 小魏JOY</small><b id="title">我的預約</b></div>
+      <div class="me" id="me"></div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab" data-go="my">我的預約</button>
+      <button class="tab" data-go="room">訂房</button>
+      <button class="tab" data-go="car">訂車</button>
+    </nav>
+  </div>
+</header>
+
+<main id="view"><div class="center"><div class="spin"></div><p>載入中…</p></div></main>
+
+<div class="bar" id="bar" hidden><div class="bar-in"><button class="btn" id="submit"></button></div></div>
+<div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+(function () {
+  const CFG = window.APP_CONFIG || {};
+  const params = new URLSearchParams(location.search);
+  const DEMO = params.get('demo') === '1';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const pad = n => String(n).padStart(2, '0');
+
+  const S = {
+    me: null, cfg: null, page: '', highlight: params.get('id') || '', busy: false,
+    room: { tower: '', room: '', ci: '', co: '', people: 0 },
+    car: { type: '', flight: '', fdate: '', ftime: '', pdate: '', ptime: '', pax: 1, pickupTouched: false },
+    reg: null,
+  };
+
+  /* ---------- 日期 ---------- */
+  function today() { return S.cfg ? S.cfg.today : new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10); }
+  function addDays(ymd, n) { const p = ymd.split('-').map(Number); return new Date(Date.UTC(p[0], p[1]-1, p[2] + n)).toISOString().slice(0, 10); }
+  function daysBetween(a, b) { if (!a || !b) return 0; const pa = a.split('-').map(Number), pb = b.split('-').map(Number); return Math.round((Date.UTC(pb[0], pb[1]-1, pb[2]) - Date.UTC(pa[0], pa[1]-1, pa[2])) / 86400000); }
+  function fmtYmd(ymd) { if (!ymd) return ''; const p = ymd.slice(0, 10).split('-'); return `${p[0]}/${p[1]}/${p[2]}`; }
+  function wd(ymd) { const p = ymd.slice(0, 10).split('-').map(Number); return '日一二三四五六'.charAt(new Date(Date.UTC(p[0], p[1]-1, p[2])).getUTCDay()); }
+  function fmtDT(dt) { return dt ? fmtYmd(dt) + ' ' + dt.slice(11, 16) : ''; }
+  function minusMinutes(date, time, mins) {
+    const p = date.split('-').map(Number), t = time.split(':').map(Number);
+    const d = new Date(Date.UTC(p[0], p[1]-1, p[2], t[0], t[1]) - mins * 60000).toISOString();
+    return [d.slice(0, 10), d.slice(11, 16)];
+  }
+
+  /* ---------- 共用 UI ---------- */
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2600); }
+  function center(icon, title, text, buttons) {
+    $('top').hidden = true; $('bar').hidden = true;
+    $('view').innerHTML = `<div class="center">${icon || ''}<h2>${title}</h2>${text ? `<p>${text}</p>` : ''}<div class="btns">${buttons || ''}</div></div>`;
+  }
+  function loading(text) { center('<div class="spin"></div>', '', esc(text || '載入中…')); }
+  function fatal(msg, retry) {
+    center('<div class="icon" style="background:var(--bad-bg);color:var(--bad)">!</div>', '暫時無法開啟', esc(msg),
+      (retry ? '<button class="btn" onclick="location.reload()">重新整理</button>' : '') +
+      (inClient() ? '<button class="btn ghost" id="closeBtn">關閉</button>' : ''));
+    const c = $('closeBtn'); if (c) c.onclick = closeWin;
+  }
+  function inClient() { try { return !DEMO && window.liff && liff.isInClient(); } catch (_) { return false; } }
+  function closeWin() { try { liff.closeWindow(); } catch (_) { history.back(); } }
+  function openSheet(html) { $('sheet').innerHTML = html; $('mask').classList.add('on'); }
+  function closeSheet() { $('mask').classList.remove('on'); }
+  $('mask').addEventListener('click', e => { if (e.target === $('mask') && !S.busy) closeSheet(); });
+
+  /* ---------- 和後台溝通 ---------- */
+  let idToken = '';
+  async function api(action, data) {
+    if (DEMO) return demoApi(action, data);
+    const res = await fetch(CFG.API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // 避免跨網域預檢，Apps Script 才收得到
+      body: JSON.stringify({ api: action, idToken: idToken, data: data || {} }),
+    });
+    if (!res.ok) throw new Error('連線失敗（' + res.status + '），請稍後再試。');
+    const r = await res.json();
+    if (r.auth) {
+      // 登入過期：重新登入一次
+      if (!sessionStorage.getItem('relogin')) { sessionStorage.setItem('relogin', '1'); liff.logout(); liff.login({ redirectUri: location.href }); }
+      throw new Error(r.error);
+    }
+    sessionStorage.removeItem('relogin');
+    return r;
+  }
+
+  function applyMe(r) {
+    S.me = r; S.cfg = r.cfg;
+    const p = r.profile;
+    $('me').innerHTML = p.registered ? `${esc(p.nameZh)}<br>會員 ${esc(p.memberId)}<br><button id="editReg">修改資料</button>` : '';
+    const e = $('editReg'); if (e) e.onclick = () => go('reg');
+  }
+
+  /* ---------- 頁面切換 ---------- */
+  function go(page, opts) {
+    if (!S.me.profile.registered && page !== 'reg') page = 'reg';
+    S.page = page;
+    history.replaceState(null, '', '?p=' + page + (DEMO ? '&demo=1' : ''));
+    $('top').hidden = false;
+    $('tabs').hidden = page === 'reg';
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.go === page));
+    $('title').textContent = { my: '我的預約', room: '訂房', car: '訂車（接送機）', reg: S.me.profile.registered ? '修改會員資料' : '會員登記' }[page];
+    window.scrollTo(0, 0);
+    ({ my: renderMy, room: renderRoom, car: renderCar, reg: renderReg })[page](opts);
+  }
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => go(t.dataset.go));
+
+  function setBar(label, enabled, onClick) {
+    if (!label) { $('bar').hidden = true; return; }
+    $('bar').hidden = false;
+    const b = $('submit');
+    b.textContent = S.busy ? '送出中…' : label;
+    b.disabled = !enabled || S.busy;
+    b.onclick = onClick;
+  }
+
+  function segHtml(id, values, current, labelFn) {
+    return `<div class="seg" id="${id}">${values.map(v => `<button type="button" data-v="${esc(v)}" class="${String(v) === String(current) ? 'on' : ''}">${labelFn ? labelFn(v) : esc(v)}</button>`).join('')}</div>`;
+  }
+  function bindSeg(id, fn) {
+    $(id).onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      [...$(id).children].forEach(c => c.classList.toggle('on', c === b));
+      fn(b.dataset.v);
+    };
+  }
+
+  /* ---------- 會員登記 ---------- */
+  function renderReg() {
+    const p = S.me.profile;
+    S.reg = S.reg || { memberId: p.memberId || '', nameZh: p.nameZh || '', nameEn: p.nameEn || '' };
+    $('view').innerHTML = `
+      ${p.registered ? '' : `<div class="card" style="background:var(--gold-soft);border-color:#EADFC8"><h3>歡迎 👋</h3><p class="sub" style="margin:0">我是 INSPIRE 度假村的台灣貴賓專屬公關小魏。完成會員登記後，就可以直接在這裡訂房、訂車。</p></div>`}
+      <div class="card">
+        <div id="err"></div>
+        <label class="f first req" for="memberId">INSPIRE 會員ID</label>
+        <input type="text" id="memberId" class="upper" autocomplete="off" value="${esc(S.reg.memberId)}" placeholder="例如 A102938">
+        <label class="f req" for="nameZh">中文姓名</label>
+        <input type="text" id="nameZh" autocomplete="name" value="${esc(S.reg.nameZh)}" placeholder="例如 陳志明">
+        <label class="f req" for="nameEn">英文姓名</label>
+        <input type="text" id="nameEn" class="upper" autocomplete="off" value="${esc(S.reg.nameEn)}" placeholder="CHEN CHIH MING">
+        <div class="hint">請填與護照相同的英文拼音</div>
+        ${p.registered ? '' : `<div class="hint" style="margin-top:14px">還沒有 INSPIRE 會員？直接在聊天室傳訊息給小魏，會協助您申請。</div>`}
+      </div>`;
+    const sync = () => {
+      S.reg = { memberId: $('memberId').value.replace(/\s/g, '').toUpperCase(), nameZh: $('nameZh').value.trim(), nameEn: $('nameEn').value.trim().replace(/\s+/g, ' ').toUpperCase() };
+      const ok = /^[A-Z0-9-]{3,30}$/.test(S.reg.memberId) && S.reg.nameZh && /^[A-Z][A-Z ,.'-]{1,59}$/.test(S.reg.nameEn);
+      setBar(p.registered ? '儲存' : '完成登記', ok, submitReg);
+    };
+    ['memberId', 'nameZh', 'nameEn'].forEach(id => $(id).addEventListener('input', sync));
+    sync();
+  }
+  async function submitReg() {
+    const wasReg = S.me.profile.registered;
+    await submit('register', S.reg, r => {
+      S.reg = null;
+      toast(wasReg ? '已更新會員資料' : '登記完成 🎉');
+      go(params.get('p') && params.get('p') !== 'reg' && !wasReg ? params.get('p') : 'my');
+    });
+  }
+
+  /* ---------- 我的預約 ---------- */
+  function renderMy() {
+    setBar('');
+    const items = S.me.rooms.map(x => Object.assign({ when: x.ci }, x)).concat(S.me.cars.map(x => Object.assign({ when: x.ftime }, x)));
+    const active = items.filter(x => x.status !== '已取消').sort((a, b) => a.when < b.when ? -1 : 1);
+    const cancelled = items.filter(x => x.status === '已取消');
+    if (!items.length) {
+      $('view').innerHTML = `<div class="empty"><b>目前沒有預約</b>需要安排住宿或接送，點下面就可以開始。
+        <div class="btns"><button class="btn" data-to="room">🏨 我要訂房</button><button class="btn ghost" data-to="car">🚗 我要訂車</button></div></div>`;
+    } else {
+      $('view').innerHTML = active.map(card).join('') +
+        (cancelled.length ? `<div style="color:var(--mute);font-size:13px;margin:22px 0 10px">已取消</div>` + cancelled.map(card).join('') : '');
+    }
+    $('view').querySelectorAll('[data-to]').forEach(b => b.onclick = () => go(b.dataset.to));
+    $('view').querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => askCancel(b.dataset.cancel));
+    $('view').querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copy(b.dataset.copy));
+    if (S.highlight) {
+      const el = document.querySelector(`[data-id="${CSS.escape(S.highlight)}"]`);
+      if (el) { el.classList.add('hl'); setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150); }
+      S.highlight = '';
+    }
+  }
+
+  function chip(st) {
+    const cls = st === '已確認' || st === '已安排' ? 'ok' : st === '已取消' ? 'off' : 'wait';
+    const label = st === '待處理' ? '確認中' : st === '待安排' ? '安排中' : st === '已取消' ? '已取消' : st;
+    return `<span class="chip ${cls}">${label}</span>`;
+  }
+  const row = (l, v, strong) => `<div class="r"><span>${l}</span><b class="${strong ? 's' : ''}">${v}</b></div>`;
+
+  function card(x) {
+    const off = x.status === '已取消';
+    const pending = x.status === '待處理' || x.status === '待安排';
+    let body, head;
+    if (x.kind === 'room') {
+      head = `<small>HOTEL · 訂房</small><b>${esc(x.tower)}・${esc(x.room)}</b>`;
+      body = row('會員ID', esc(x.memberId)) +
+        row('客人姓名', `${esc(x.nameZh)}<small>${esc(x.nameEn)}</small>`, true) +
+        row('樓', esc(x.tower)) + row('房型', esc(x.room)) + '<div class="sep"></div>' +
+        row('入住日期', `${esc(fmtYmd(x.ci))}（${wd(x.ci)}）${esc(S.cfg.checkin)}`, true) +
+        row('退房日期', `${esc(fmtYmd(x.co))}（${wd(x.co)}）${esc(S.cfg.checkout)}`, true) +
+        (x.code
+          ? `<div class="hi"><small>訂房代號</small><b>${esc(x.code)}</b><button class="copy" data-copy="${esc(x.code)}">複製代號</button></div>`
+          : off ? '' : `<div class="hi wait"><small>訂房代號</small><b>確認中，小魏訂好後會通知您</b></div>`);
+    } else {
+      const dep = x.type === '送機';
+      head = `<small>TRANSFER · ${dep ? '送機' : '接機'}</small><b>${esc(x.flight)}｜${dep ? '度假村 → 機場' : '機場 → 度假村'}</b>`;
+      body = row('客人姓名', `${esc(x.nameZh)}<small>${esc(x.nameEn)}</small>`, true) +
+        row('航班', esc(x.flight), true) +
+        row(dep ? '起飛時間' : '抵達時間', esc(fmtDT(x.ftime))) +
+        (dep ? row('上車時間', esc(fmtDT(x.pickup)), true) : '') +
+        row('上車人數', esc(x.pax) + ' 位') +
+        (off ? '' : dep
+          ? `<div class="hi loc"><small>上車地點</small><b>VIP LOBBY</b></div>`
+          : `<div class="hi txt"><small>接機方式</small><b>${esc(S.cfg.noteArrive)}</b></div>`) +
+        (pending ? `<div class="hi wait"><small>狀態</small><b>安排中，小魏安排好車子後會通知您</b></div>` : '');
+    }
+    return `<div class="bk" data-id="${esc(x.id)}">
+      <div class="bk-head ${off ? 'grey' : ''}"><div>${head}</div>${chip(x.status)}</div>
+      <div class="bk-body">${body}</div>
+      <div class="bk-foot"><span>編號 ${esc(x.id)}</span>${pending ? `<button data-cancel="${esc(x.id)}">取消申請</button>` : ''}</div>
+    </div>`;
+  }
+
+  function copy(text) {
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('已複製 ' + text), () => {
+      const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); toast('已複製 ' + text); } catch (_) {} t.remove();
+    });
+  }
+
+  function askCancel(id) {
+    openSheet(`<h2>取消 ${esc(id)}？</h2><p>小魏還在處理這筆申請，取消後會通知小魏不用再安排。</p>
+      <div class="btns"><button class="btn" id="go" style="background:var(--bad)">確定取消</button><button class="btn ghost" id="back">不要取消</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = async () => {
+      S.busy = true; $('go').disabled = true; $('go').textContent = '處理中…';
+      try { const r = await api('cancel', { id }); if (!r.ok) throw new Error(r.error); applyMe(r); closeSheet(); toast(r.msg); renderMy(); }
+      catch (e) { closeSheet(); toast(e.message); }
+      finally { S.busy = false; }
+    };
+  }
+
+  /* ---------- 訂房 ---------- */
+  function renderRoom() {
+    const R = S.room, c = S.cfg;
+    $('view').innerHTML = `
+      <div class="card">
+        <div id="err"></div>
+        <label class="f first req">樓</label>
+        ${segHtml('tower', c.towers, R.tower)}
+        <label class="f req">房型</label>
+        ${segHtml('roomType', c.rooms, R.room)}
+        <div class="row2" style="margin-top:16px">
+          <div><label class="f first req" for="ci">入住日期</label><input type="date" id="ci" min="${today()}" value="${R.ci}"></div>
+          <div><label class="f first req" for="co">退房日期</label><input type="date" id="co" min="${R.ci ? addDays(R.ci, 1) : addDays(today(), 1)}" value="${R.co}"></div>
+        </div>
+        <div class="nights" id="nights"></div>
+        <label class="f req">入住人數</label>
+        ${segHtml('people', Array.from({ length: c.maxRoomPeople }, (_, i) => i + 1), R.people, v => v + ' 位')}
+        <div class="hint">入住 ${esc(c.checkin)}・退房 ${esc(c.checkout)}</div>
+      </div>`;
+    bindSeg('tower', v => { R.tower = v; sync(); });
+    bindSeg('roomType', v => { R.room = v; sync(); });
+    bindSeg('people', v => { R.people = Number(v); sync(); });
+    $('ci').onchange = () => {
+      R.ci = $('ci').value;
+      if (R.ci) { $('co').min = addDays(R.ci, 1); if (!R.co || daysBetween(R.ci, R.co) < 1) { R.co = addDays(R.ci, 1); $('co').value = R.co; } }
+      sync();
+    };
+    $('co').onchange = () => { R.co = $('co').value; sync(); };
+    function sync() {
+      const n = daysBetween(R.ci, R.co);
+      $('nights').textContent = R.ci && R.co ? (n >= 1 ? `${fmtYmd(R.ci)} → ${fmtYmd(R.co)}，共 ${n} 晚` : '⚠ 退房日期要晚於入住日期') : '';
+      const ok = R.tower && R.room && R.ci && R.co && n >= 1 && R.ci >= today() && R.people;
+      setBar('送出訂房需求', ok, () => confirmRoom(n));
+    }
+    sync();
+  }
+  function confirmRoom(n) {
+    const R = S.room, p = S.me.profile;
+    openSheet(`<h2>確認訂房需求</h2><p>送出後小魏會幫您訂房，訂好會把訂房代號傳給您。</p>
+      <div class="card" style="margin-bottom:14px;padding:12px 14px">
+        ${row('客人姓名', `${esc(p.nameZh)}<small>${esc(p.nameEn)}</small>`, true)}
+        ${row('樓／房型', esc(R.tower) + '・' + esc(R.room))}
+        ${row('入住日期', esc(fmtYmd(R.ci)) + ' ' + esc(S.cfg.checkin), true)}
+        ${row('退房日期', esc(fmtYmd(R.co)) + ' ' + esc(S.cfg.checkout) + `（${n} 晚）`, true)}
+        ${row('人數', R.people + ' 位')}
+      </div>
+      <div class="btns"><button class="btn" id="go">確認送出</button><button class="btn ghost" id="back">返回修改</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => { closeSheet(); submit('room', R, r => {
+      S.room = { tower: '', room: '', ci: '', co: '', people: 0 };
+      done('訂房需求已送出', `小魏訂好房後，會把訂房代號傳到聊天室給您。<br>編號 ${esc(r.created)}`, r.created, `已送出訂房需求 ${r.created}（${fmtYmd(R.ci)} 入住）`);
+    }); };
+  }
+
+  /* ---------- 訂車 ---------- */
+  function renderCar() {
+    const V = S.car, c = S.cfg;
+    const dep = V.type === '送機';
+    $('view').innerHTML = `
+      <div class="card">
+        <div id="err"></div>
+        <label class="f first req">接機還是送機？</label>
+        ${segHtml('ctype', ['接機', '送機'], V.type, v => v === '接機' ? '接機<small>機場 → 度假村</small>' : '送機<small>度假村 → 機場</small>')}
+        <div id="carRest" ${V.type ? '' : 'hidden'}>
+          <label class="f req" for="flight">航班號碼</label>
+          <input type="text" id="flight" class="upper" autocomplete="off" placeholder="例如 BR160" value="${esc(V.flight)}">
+          <label class="f req" id="ftimeLabel">${dep ? '班機起飛時間' : '班機抵達時間'}（韓國時間）</label>
+          <div class="row2"><div><input type="date" id="fdate" min="${today()}" value="${V.fdate}"></div><div><input type="time" id="ftime" value="${V.ftime}"></div></div>
+          <div id="pickupBox" ${dep ? '' : 'hidden'}>
+            <label class="f req">預計上車時間</label>
+            <div class="row2"><div><input type="date" id="pdate" min="${today()}" value="${V.pdate}"></div><div><input type="time" id="ptime" value="${V.ptime}"></div></div>
+            <div class="hint">填好起飛時間後，會先幫您帶入起飛前 3 小時，可以再調整</div>
+          </div>
+          <label class="f req">幾位上車</label>
+          <div class="stepper"><button type="button" id="minus">−</button><span id="pax">${V.pax} 位</span><button type="button" id="plus">＋</button></div>
+          <div class="note" id="carNote">${dep ? '📍 ' + esc(c.noteDepart) : '🪧 ' + esc(c.noteArrive)}</div>
+        </div>
+      </div>`;
+    bindSeg('ctype', v => { V.type = v; renderCar(); });
+    if (!V.type) { setBar('送出接送需求', false); return; }
+    $('flight').oninput = () => { V.flight = $('flight').value.replace(/\s/g, '').toUpperCase(); sync(); };
+    const fChange = () => {
+      V.fdate = $('fdate').value; V.ftime = $('ftime').value;
+      if (dep && V.fdate && V.ftime && !V.pickupTouched) {
+        const [d, t] = minusMinutes(V.fdate, V.ftime, 180);
+        V.pdate = d; V.ptime = t; $('pdate').value = d; $('ptime').value = t;
+      }
+      sync();
+    };
+    $('fdate').onchange = fChange; $('ftime').onchange = fChange;
+    if (dep) {
+      const pChange = () => { V.pdate = $('pdate').value; V.ptime = $('ptime').value; V.pickupTouched = true; sync(); };
+      $('pdate').onchange = pChange; $('ptime').onchange = pChange;
+    }
+    $('minus').onclick = () => { V.pax = Math.max(1, V.pax - 1); sync(); };
+    $('plus').onclick = () => { V.pax = Math.min(c.maxCarPax, V.pax + 1); sync(); };
+    function sync() {
+      $('pax').textContent = V.pax + ' 位';
+      $('minus').disabled = V.pax <= 1; $('plus').disabled = V.pax >= c.maxCarPax;
+      const f = V.fdate && V.ftime ? V.fdate + ' ' + V.ftime : '';
+      const p = V.pdate && V.ptime ? V.pdate + ' ' + V.ptime : '';
+      let problem = '';
+      if (dep && f && p && p >= f) problem = '上車時間要早於起飛時間';
+      $('err').innerHTML = problem ? `<div class="err">⚠ ${problem}</div>` : '';
+      const ok = /^[A-Z0-9]{2,3}\d{1,4}[A-Z]?$/.test(V.flight) && f && V.fdate >= today() && (!dep || (p && !problem));
+      setBar('送出' + V.type + '需求', ok, () => confirmCar(f, p));
+    }
+    sync();
+  }
+  function confirmCar(f, p) {
+    const V = S.car, dep = V.type === '送機', pr = S.me.profile;
+    openSheet(`<h2>確認${esc(V.type)}需求</h2><p>送出後小魏會幫您安排車子，安排好會通知您。</p>
+      <div class="card" style="margin-bottom:14px;padding:12px 14px">
+        ${row('客人姓名', `${esc(pr.nameZh)}<small>${esc(pr.nameEn)}</small>`, true)}
+        ${row('航班', esc(V.flight), true)}
+        ${row(dep ? '起飛時間' : '抵達時間', esc(fmtDT(f)))}
+        ${dep ? row('上車時間', esc(fmtDT(p)), true) : ''}
+        ${row('上車人數', V.pax + ' 位')}
+        <div class="note" style="margin-top:10px">${dep ? '📍 ' + esc(S.cfg.noteDepart) : '🪧 ' + esc(S.cfg.noteArrive)}</div>
+      </div>
+      <div class="btns"><button class="btn" id="go">確認送出</button><button class="btn ghost" id="back">返回修改</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => { closeSheet(); submit('car', { type: V.type, flight: V.flight, ftime: f, pickup: p, pax: V.pax }, r => {
+      const type = V.type, flight = V.flight;
+      S.car = { type: '', flight: '', fdate: '', ftime: '', pdate: '', ptime: '', pax: 1, pickupTouched: false };
+      done(type + '需求已送出', `小魏安排好車子後，會傳訊息到聊天室通知您。<br>編號 ${esc(r.created)}`, r.created, `已送出${type}需求 ${r.created}（${flight}）`);
+    }); };
+  }
+
+  /* ---------- 送出與完成 ---------- */
+  async function submit(action, data, onOk) {
+    S.busy = true; setBar($('submit').textContent, false, null); $('submit').textContent = '送出中…';
+    try {
+      const r = await api(action, data);
+      if (!r.ok) {
+        if (r.needReg) { S.me.profile.registered = false; go('reg'); }
+        throw new Error(r.error || '送出失敗');
+      }
+      applyMe(r);
+      S.busy = false;
+      onOk(r);
+    } catch (e) {
+      S.busy = false;
+      const box = $('err');
+      if (box) { box.innerHTML = `<div class="err">⚠ ${esc(e.message)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      else toast(e.message);
+      go(S.page);
+      const b2 = $('err'); if (b2) b2.innerHTML = `<div class="err">⚠ ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function done(title, text, id, chatText) {
+    // 在聊天室留一句紀錄（客人自己發出，不佔訊息額度）
+    if (inClient() && chatText) { try { await liff.sendMessages([{ type: 'text', text: chatText }]); } catch (_) {} }
+    center('<div class="icon">✓</div>', esc(title), text,
+      `<button class="btn" id="seeMy">查看我的預約</button>` + (inClient() ? `<button class="btn ghost" id="closeBtn">關閉</button>` : ''));
+    $('seeMy').onclick = () => { S.highlight = id; go('my'); };
+    const c = $('closeBtn'); if (c) c.onclick = closeWin;
+  }
+
+  /* ---------- 啟動 ---------- */
+  async function start() {
+    if (DEMO) { $('demoBar').hidden = false; }
+    else {
+      if (!CFG.LIFF_ID || !CFG.API_URL) { fatal('系統還沒設定完成（config.js），請聯繫小魏。'); return; }
+      try { await liff.init({ liffId: CFG.LIFF_ID }); }
+      catch (e) { fatal('LINE 初始化失敗：' + (e.message || e), true); return; }
+      if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+      idToken = liff.getIDToken();
+      if (!idToken) { fatal('無法取得登入資訊，請確認 LIFF 有開啟 openid 權限。'); return; }
+    }
+    let r;
+    try { r = await api('me'); }
+    catch (e) { fatal(e.message, true); return; }
+    if (!r.ok) {
+      if (r.notFriend) {
+        center('<div class="icon" style="background:var(--gold-soft);color:var(--gold-text)">＋</div>', '先加入好友', esc(r.error),
+          `<a class="btn" href="https://line.me/R/ti/p/${encodeURIComponent(CFG.OA_ID || '@inspirekorea')}">加入 ${esc(CFG.OA_ID || '@inspirekorea')}</a><button class="btn ghost" onclick="location.reload()">我加好了</button>`);
+        return;
+      }
+      fatal(r.error || '讀取失敗', true); return;
+    }
+    applyMe(r);
+    const want = params.get('p');
+    go(['my', 'room', 'car', 'reg'].includes(want) ? want : 'my');
+  }
+
+  /* ---------- 示範資料（?demo=1） ---------- */
+  const D = {
+    profile: { memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', registered: params.get('reg') !== '0' },
+    rooms: [
+      { kind: 'room', id: 'R0001', status: '已確認', code: 'INS2611-0502', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '海洋', room: '雙床', ci: '2026-11-20', co: '2026-11-23', nights: 3, people: 2 },
+      { kind: 'room', id: 'R0004', status: '待處理', code: '', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '太陽', room: '大床', ci: '2026-12-18', co: '2026-12-21', nights: 3, people: 1 },
+    ],
+    cars: [
+      { kind: 'car', id: 'C0002', status: '已安排', type: '接機', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', flight: 'CI160', ftime: '2026-11-20 14:30', pickup: '', pax: 2 },
+      { kind: 'car', id: 'C0004', status: '待安排', type: '送機', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', flight: 'BR160', ftime: '2026-11-23 14:30', pickup: '2026-11-23 11:30', pax: 2 },
+    ],
+    cfg: { towers: ['太陽', '海洋'], rooms: ['大床', '雙床'], maxRoomPeople: 2, maxCarPax: 10, checkin: '15:00', checkout: '11:00',
+      noteDepart: '上車地點一律為 VIP LOBBY', noteArrive: '接機工作人員會舉著 INSPIRE 的牌子等候您', today: '2026-10-31' },
+  };
+  let seq = 5;
+  async function demoApi(action, data) {
+    await new Promise(r => setTimeout(r, 250));
+    const out = extra => Object.assign({ ok: true }, JSON.parse(JSON.stringify(D)), extra || {});
+    if (action === 'register') { Object.assign(D.profile, data, { registered: true }); return out(); }
+    if (action === 'room') { const id = 'R' + String(seq++).padStart(4, '0'); D.rooms.push(Object.assign({ kind: 'room', id, status: '待處理', code: '', nameZh: D.profile.nameZh, nameEn: D.profile.nameEn, memberId: D.profile.memberId }, data)); return out({ created: id }); }
+    if (action === 'car') { const id = 'C' + String(seq++).padStart(4, '0'); D.cars.push(Object.assign({ kind: 'car', id, status: '待安排', nameZh: D.profile.nameZh, nameEn: D.profile.nameEn }, data)); return out({ created: id }); }
+    if (action === 'cancel') { D.rooms.concat(D.cars).forEach(x => { if (x.id === data.id) x.status = '已取消'; }); return out({ msg: '已取消 ' + data.id }); }
+    return out();
+  }
+
+  start();
+})();
+</script>
+</body>
+</html>
