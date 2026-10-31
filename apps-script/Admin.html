@@ -124,6 +124,14 @@
   .sheet input[type=text]{margin-bottom:14px}
   .chk{display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:14px}
   .chk input{width:20px;height:20px}
+  .acc{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
+  .acc.a1{background:var(--warn-bg);color:var(--warn)} .acc.a2{background:#EDE7F6;color:var(--plum-2)}
+  .mnote{margin-top:6px;font-size:13px;color:var(--plum-2);background:var(--gold-soft);border-radius:8px;padding:6px 10px;white-space:pre-wrap}
+  textarea{font:inherit;width:100%;min-height:88px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;resize:vertical;background:#fff}
+  .segv{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+  .segv button{text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 12px;cursor:pointer}
+  .segv button small{display:block;color:var(--mute);font-size:12px}
+  .segv button.on{border-color:var(--plum);box-shadow:0 0 0 2px var(--plum) inset}
   .toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-140%);transition:transform .25s;z-index:30;background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;max-width:92vw;box-shadow:0 6px 20px rgba(0,0,0,.2)}
   .toast.on{transform:translate(-50%,0)}
   .toast.bad{background:var(--bad)}
@@ -143,6 +151,7 @@
     <button class="tab" data-tab="todo">待處理<span id="todoDot"></span></button>
     <button class="tab on" data-tab="new">新增訂房</button>
     <button class="tab" data-tab="list">所有紀錄</button>
+    <button class="tab" data-tab="mem">會員</button>
   </nav>
 </header>
 
@@ -213,6 +222,15 @@
         <div class="bubble" id="preview"></div>
       </div>
     </div>
+  </section>
+
+  <!-- 會員管理 -->
+  <section class="panel" id="p-mem">
+    <div class="tool">
+      <input type="search" id="memQ" placeholder="搜尋姓名、英文名、會員ID、LINE 名稱">
+      <button id="memRefresh" title="重新整理">↻</button>
+    </div>
+    <div id="memList"><div class="loading">載入中…</div></div>
   </section>
 
   <!-- 所有紀錄 -->
@@ -300,6 +318,13 @@
   function custTitle(c) {
     return registered(c) ? `${esc(c.nameZh)}` : `${esc(c.lineName || '(未命名)')}<span class="tag">未登記</span>`;
   }
+  const ACC = {
+    '全部': { lv: 3, label: '全部房型', sub: '可以訂所有房型，包含迎仕柏套房' },
+    '套房': { lv: 2, label: '最高到一般套房', sub: '豪華客房、單間套房、輝映／海洋套房；不能訂迎仕柏套房' },
+    '豪華客房': { lv: 1, label: '只限豪華客房', sub: '只能訂豪華大床房、豪華雙床房；不能訂套房' },
+  };
+  const accTag = c => c.access && c.access !== '全部' ? `<span class="acc a${ACC[c.access].lv}">${esc(ACC[c.access].label)}</span>` : '';
+  const roomLv = r => /^豪華/.test(r) ? 1 : /^迎仕柏/.test(r) ? 3 : 2;
   function custSub(c) {
     if (c.status === '已封鎖') return '已封鎖官方帳號';
     if (registered(c)) return `${c.nameEn}・會員 ${c.memberId}`;
@@ -329,9 +354,9 @@
     $('custPicked').innerHTML = `
       <div class="picked">
         <div class="avatar">${initial(c)}</div>
-        <div class="meta"><b>${custTitle(c)}</b><span>${esc(custSub(c))}</span></div>
+        <div class="meta"><b>${custTitle(c)}${accTag(c)}</b><span>${esc(custSub(c))}</span></div>
         <button type="button" class="link" id="custChange">更換</button>
-      </div>`;
+      </div>${c.note ? `<div class="mnote">📝 ${esc(c.note)}</div>` : ''}`;
     $('custPicked').style.display = '';
     $('custSearch').style.display = 'none';
     $('custChange').onclick = () => {
@@ -376,6 +401,8 @@
     $('nights').textContent = d.ci && d.co ? (n >= 1 ? `共 ${n} 晚` : '⚠ 退房日期要晚於入住日期') : '';
     $('preview').innerHTML = noticeHtml(d);
     const p = problems(d);
+    const over = S.picked && S.room && roomLv(S.room) > (ACC[S.picked.access] || ACC['全部']).lv;
+    if (over) $('nights').textContent += `${$('nights').textContent ? '　' : ''}⚠ 這位客人設定為「${ACC[S.picked.access].label}」，確定要幫他訂這個房型？`;
     $('submit').disabled = p.length > 0 || S.busy;
     $('submit').textContent = S.busy ? '傳送中…' : (p.length ? `還缺：${p.slice(0, 3).join('、')}${p.length > 3 ? '…' : ''}` : '確認並傳送給客人');
   }
@@ -557,7 +584,41 @@
       : `<div class="empty">${src.length ? '找不到符合的紀錄' : '還沒有紀錄'}</div>`;
   }
 
-  function renderAll() { renderTodo(); renderRecs(); }
+  /* ---------- 會員管理 ---------- */
+  function renderMem() {
+    const q = $('memQ').value.trim().toLowerCase();
+    const list = S.customers.filter(c => !q || [c.nameZh, c.nameEn, c.memberId, c.lineName, c.note].some(v => String(v || '').toLowerCase().includes(q)));
+    $('memList').innerHTML = list.length ? list.map(c => `
+      <div class="rec" data-mem="${esc(c.uid)}" style="cursor:pointer">
+        <div class="rec-top">
+          <div><div class="rec-name">${registered(c) ? esc(c.nameZh) : esc(c.lineName || '(未命名)')}<small>${esc(c.nameEn)}</small>${accTag(c)}</div>
+            <div class="rec-sub">${registered(c) ? '會員 ' + esc(c.memberId) : esc(custSub(c))}・LINE ${esc(c.lineName)}${c.tier ? '・' + esc(c.tier) : ''}</div></div>
+          <span class="badge">${c.status === '已封鎖' ? '已封鎖' : '編輯'}</span>
+        </div>
+        ${c.note ? `<div class="mnote">📝 ${esc(c.note)}</div>` : ''}
+      </div>`).join('')
+      : `<div class="empty">${S.customers.length ? '找不到符合的客人' : '還沒有客人資料'}</div>`;
+  }
+  function editMember(uid) {
+    const c = S.customers.find(x => x.uid === uid); if (!c) return;
+    let acc = ACC[c.access] ? c.access : '全部';
+    openSheet(`<h2>${registered(c) ? esc(c.nameZh) : esc(c.lineName || '客人')}</h2>
+      <p>${esc(c.nameEn)}・LINE ${esc(c.lineName)}</p>
+      <label class="f">可訂房型</label>
+      <div class="segv" id="accSeg">${Object.keys(ACC).map(k => `<button type="button" data-v="${k}" class="${k === acc ? 'on' : ''}"><b>${ACC[k].label}</b><small>${ACC[k].sub}</small></button>`).join('')}</div>
+      <div class="row2">
+        <div><label class="f" for="mId">會員ID</label><input type="text" id="mId" class="upper" value="${esc(c.memberId)}" autocomplete="off"></div>
+        <div><label class="f" for="mTier">Casino Tier</label><input type="text" id="mTier" value="${esc(c.tier)}" placeholder="Royal" autocomplete="off"></div>
+      </div>
+      <label class="f" for="mNote">後台備註（客人看不到）</label>
+      <textarea id="mNote" placeholder="例如：喜歡高樓層、不抽菸、生日 3/15">${esc(c.note)}</textarea>
+      <div class="btns" style="margin-top:14px"><button class="btn" id="go">儲存</button><button class="btn ghost" id="back">取消</button></div>`);
+    $('accSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; acc = b.dataset.v; [...$('accSeg').children].forEach(x => x.classList.toggle('on', x === b)); };
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, memberId: $('mId').value.trim(), tier: $('mTier').value.trim(), note: $('mNote').value }]);
+  }
+
+  function renderAll() { renderTodo(); renderRecs(); renderMem(); }
 
   document.addEventListener('click', e => {
     const g = e.target.closest('button[data-reg]');
@@ -671,7 +732,7 @@
 
   function switchTab(name) {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
-    ['todo', 'new', 'list'].forEach(p => $('p-' + p).classList.toggle('on', p === name));
+    ['todo', 'new', 'list', 'mem'].forEach(p => $('p-' + p).classList.toggle('on', p === name));
     $('bar').style.display = name === 'new' ? '' : 'none';
   }
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
@@ -695,7 +756,7 @@
       if (!showToast && (S.rooms.concat(S.cars).some(x => PENDING.includes(x.status)) || S.customers.some(c => c.regStatus === '待綁定' || c.regStatus === '辦卡中'))) switchTab('todo');
       if (showToast) toast('已更新');
     } catch (e) {
-      ['custList', 'recList', 'todoList'].forEach(id => $(id).innerHTML = `<div class="empty">${esc(e.message)}</div>`);
+      ['custList', 'recList', 'todoList', 'memList'].forEach(id => $(id).innerHTML = `<div class="empty">${esc(e.message)}</div>`);
       toast(e.message, true);
     }
   }
@@ -704,6 +765,9 @@
   $('custQ').addEventListener('input', renderCustList);
   $('custList').addEventListener('click', e => { const o = e.target.closest('.opt'); if (o) pickCustomer(o.dataset.uid); });
   $('recQ').addEventListener('input', renderRecs);
+  $('memQ').addEventListener('input', renderMem);
+  $('memRefresh').onclick = () => load(true);
+  $('memList').addEventListener('click', e => { const o = e.target.closest('[data-mem]'); if (o) editMember(o.dataset.mem); });
   $('refresh').onclick = () => load(true);
   $('custReload').onclick = () => load(true);
   ['memberId', 'nameZh', 'nameEn', 'code'].forEach(id => $(id).addEventListener('input', () => { $('formErr').classList.remove('on'); update(); }));

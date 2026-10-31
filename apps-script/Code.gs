@@ -50,7 +50,7 @@ const CFG = {
 const SHEETS = { CUST: '客人', ROOM: '訂房', CAR: '訂車', STAFF: '使用者', LOG: '紀錄', EVENT: '活動' };
 const HEADERS = {
   '客人': ['LINE userId', 'LINE名稱', '會員ID', '中文姓名', '英文姓名', '狀態', '加入時間', '最後訊息', '備註',
-          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId', 'Casino Tier'],
+          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId', 'Casino Tier', '可訂房型', '後台備註'],
   '訂房': ['編號', '狀態', '訂房代號', '會員ID', '中文姓名', '英文姓名', '樓', '房型', '入住日期', '退房日期', '晚數', '人數',
            '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
@@ -669,6 +669,31 @@ function apiBind(key, uid, memberId) {
   return { ok: r.ok, msg: r.msg, customers: listCustomers_() };
 }
 
+/** 會員管理：可訂房型、Casino Tier、後台備註、會員ID */
+function apiSaveMember(key, uid, d) {
+  const staff = auth_(key);
+  d = d || {};
+  const access = ACCESS[d.access] ? d.access : '全部';
+  const tier = String(d.tier || '').trim().slice(0, 30);
+  const note = String(d.note || '').trim().slice(0, 500);
+  const memberId = String(d.memberId || '').trim().toUpperCase();
+  const msg = withLock_(function () {
+    const found = findRow_(SHEETS.CUST, 'LINE userId', uid);
+    if (!found) throw new Error('找不到這位客人，請重新整理。');
+    const upd = { '可訂房型': access, 'Casino Tier': tier, '後台備註': note };
+    if (memberId && memberId !== found.data['會員ID']) {
+      if (!/^[A-Z0-9-]{3,30}$/.test(memberId)) throw new Error('會員ID 格式不對。');
+      const dup = readRows_(SHEETS.CUST).some(function (r) { return r['會員ID'] === memberId && r['LINE userId'] !== uid; });
+      if (dup) throw new Error('會員ID ' + memberId + ' 已經綁定在另一位客人。');
+      upd['會員ID'] = memberId;
+    }
+    setCells_(SHEETS.CUST, found.row, upd);
+    log_('會員管理', staff.name + ' 更新 ' + (found.data['中文姓名'] || found.data['LINE名稱']) + '：' + access + (upd['會員ID'] ? '、會員ID ' + memberId : ''));
+    return '已儲存 ' + (found.data['中文姓名'] || found.data['LINE名稱']);
+  });
+  return { ok: true, msg: msg, customers: listCustomers_() };
+}
+
 function apiReject(key, uid, reason) {
   const staff = auth_(key);
   const r = rejectReg_(uid, String(reason || '照片看不太清楚').slice(0, 60), staff.name);
@@ -705,7 +730,7 @@ function handleApi_(body) {
     }
 
     if (action === 'room') {
-      const b = createRoomRequest_(uid, fresh, validateCustomerRoom_(d), '客人');
+      const b = createRoomRequest_(uid, fresh, validateCustomerRoom_(d, fresh), '客人');
       return meResponse_(uid, { created: b.id, msg: '已收到您的訂房需求' });
     }
     if (action === 'car') {
@@ -741,7 +766,7 @@ function meResponse_(uid, extra) {
     },
     rooms: rooms, cars: cars,
     cfg: {
-      towers: CFG.TOWERS, rooms: CFG.ROOMS, maxRoomPeople: CFG.MAX_ROOM_PEOPLE, maxCarPax: CFG.MAX_CAR_PAX,
+      towers: CFG.TOWERS, rooms: allowedRooms_(c), maxRoomPeople: CFG.MAX_ROOM_PEOPLE, maxCarPax: CFG.MAX_CAR_PAX,
       checkin: CFG.CHECKIN_TIME, checkout: CFG.CHECKOUT_TIME, noteDepart: CFG.NOTE_DEPART, noteArrive: CFG.NOTE_ARRIVE,
       today: today,
     },
@@ -768,13 +793,24 @@ function publicCar_(r) {
   };
 }
 
-function validateCustomerRoom_(d) {
+/* ----- 每位客人可訂的房型等級（「客人」工作表的「可訂房型」：全部／套房／豪華客房） ----- */
+const ACCESS = { '全部': 3, '套房': 2, '豪華客房': 1 };
+function roomLevel_(room) { return /^豪華/.test(room) ? 1 : /^迎仕柏/.test(room) ? 3 : 2; }
+function accessLevel_(cust) { return ACCESS[String((cust && cust['可訂房型']) || '').trim()] || 3; }
+function allowedRooms_(cust) {
+  const lv = accessLevel_(cust), out = {};
+  Object.keys(CFG.ROOMS).forEach(function (t) { out[t] = CFG.ROOMS[t].filter(function (r) { return roomLevel_(r) <= lv; }); });
+  return out;
+}
+
+function validateCustomerRoom_(d, cust) {
   const r = {
     tower: String(d.tower || ''), room: String(d.room || ''),
     ci: String(d.ci || ''), co: String(d.co || ''), people: parseInt(d.people, 10),
   };
   if (CFG.TOWERS.indexOf(r.tower) < 0) throw new Error('請選擇樓。');
   if ((CFG.ROOMS[r.tower] || []).indexOf(r.room) < 0) throw new Error('請選擇房型。');
+  if (cust && roomLevel_(r.room) > accessLevel_(cust)) throw new Error('這個房型請直接和小魏聯繫安排 🙏');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(r.ci) || !/^\d{4}-\d{2}-\d{2}$/.test(r.co)) throw new Error('請選擇入住和退房日期。');
   if (r.ci < todayYmd_()) throw new Error('入住日期不能是過去的日期。');
   r.nights = daysBetween_(r.ci, r.co);
@@ -1281,6 +1317,7 @@ function listCustomers_() {
       uid: r['LINE userId'], lineName: r['LINE名稱'], memberId: r['會員ID'], nameZh: r['中文姓名'], nameEn: r['英文姓名'],
       status: r['狀態'] || '好友', last: r['最後訊息'] || r['加入時間'] || '',
       regStatus: r['登記狀態'] || '', docType: r['證件類型'] || '', docUrl: r['證件檔案'] || '', regAt: r['登記時間'] || '',
+      access: ACCESS[r['可訂房型']] ? r['可訂房型'] : '全部', tier: r['Casino Tier'] || '', note: r['後台備註'] || '',
     };
   }).filter(function (c) { return c.uid; })
     .sort(function (a, b) { return a.last < b.last ? 1 : -1; });
