@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root{
+    --plum:#2B1B3D; --plum-2:#3D2A54; --gold:#C9A45C; --gold-soft:#F6F1E7; --gold-text:#8A6F3A;
+    --ink:#1F1A24; --mute:#8A8494; --line:#E7E2EA; --bg:#F7F5F2; --card:#FFFFFF;
+    --ok:#2F7D4F; --ok-bg:#E7F4EC; --bad:#B4352B; --bad-bg:#FBEAE8; --warn:#7A5600; --warn-bg:#FFF4D6;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+    font-size:16px;line-height:1.5}
+  button,input,select{font:inherit;color:inherit}
+  .top{position:sticky;top:0;z-index:5;background:var(--plum);color:#fff;padding:14px 16px 0}
+  .top-row{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:720px;margin:0 auto}
+  .brand small{display:block;color:var(--gold);font-size:11px;letter-spacing:.12em;font-weight:700}
+  .brand b{font-size:18px}
+  .who{text-align:right;font-size:12px;opacity:.9}
+  .quota{display:inline-block;margin-top:2px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.12);font-size:12px;white-space:nowrap}
+  .quota.low{background:var(--gold);color:var(--plum);font-weight:700}
+  .tabs{display:flex;gap:4px;max-width:720px;margin:12px auto 0}
+  .tab{flex:1;background:none;border:0;color:rgba(255,255,255,.65);padding:10px 0 12px;font-weight:600;border-bottom:3px solid transparent;cursor:pointer;position:relative}
+  .tab.on{color:#fff;border-color:var(--gold)}
+  .dot{display:inline-block;min-width:20px;height:20px;line-height:20px;padding:0 6px;border-radius:10px;background:var(--gold);color:var(--plum);font-size:12px;font-weight:800;margin-left:4px;vertical-align:1px}
+  main{max-width:720px;margin:0 auto;padding:16px 16px 120px}
+  .panel{display:none}.panel.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  .card h3{margin:0 0 12px;font-size:13px;color:var(--mute);font-weight:600;letter-spacing:.04em}
+  label.f{display:block;font-size:13px;color:var(--mute);margin:16px 0 6px}
+  .row2 label.f,.card > label.f:first-of-type{margin-top:0}
+  .card > .row2 + label.f,.card > .row2{margin-top:16px}
+  .card > h3 + .row2{margin-top:0}
+  .req::after{content:" *";color:var(--bad)}
+  input[type=text],input[type=date],input[type=search]{width:100%;height:46px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#fff;outline:none;min-width:0}
+  input[type=date]{-webkit-appearance:none;appearance:none}
+  input:focus{border-color:var(--plum-2);box-shadow:0 0 0 3px rgba(61,42,84,.12)}
+  input.upper{text-transform:uppercase}
+  .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+  .row2 > div{min-width:0}
+  .seg{display:flex;background:#F1EEF3;border-radius:10px;padding:3px;gap:3px}
+  .seg button{flex:1;height:40px;border:0;border-radius:8px;background:none;font-weight:600;color:var(--mute);cursor:pointer}
+  .seg button.on{background:#fff;color:var(--plum);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  #room{flex-wrap:wrap}
+  #room button{flex:1 1 calc(50% - 3px);font-size:14px}
+  .nights{margin-top:8px;font-size:13px;color:var(--gold-text);min-height:20px}
+  .hint{font-size:12px;color:var(--mute);margin-top:8px}
+  /* 客人選擇 */
+  .picked{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--gold-soft)}
+  .avatar{width:38px;height:38px;border-radius:50%;background:var(--plum);color:#fff;display:grid;place-items:center;font-weight:700;flex:none}
+  .meta{flex:1;min-width:0}
+  .meta b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta span{display:block;font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px;background:var(--warn-bg);color:var(--warn);margin-left:6px;vertical-align:2px}
+  .link{background:none;border:0;color:var(--plum-2);font-weight:600;cursor:pointer;padding:4px;text-decoration:underline;font-size:inherit}
+  .list{max-height:300px;overflow:auto;margin-top:8px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+  .opt:last-child{border-bottom:0}
+  .opt:hover{background:#FAF8FB}
+  .opt.blocked{opacity:.5}
+  .empty{padding:16px;color:var(--mute);font-size:14px;text-align:center}
+  /* 預覽卡 */
+  .preview-wrap{background:#8CABD9;border-radius:14px;padding:18px 14px}
+  .chat-name{font-size:12px;color:#fff;margin:0 0 6px 4px;opacity:.9}
+  .bubble{max-width:330px}
+  .b-text{background:#fff;border-radius:16px;padding:12px 14px;font-size:14px;line-height:1.55;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+  .b-qr{margin-top:10px}.b-qr span{display:inline-block;background:#fff;border:1px solid #c9c9c9;border-radius:18px;padding:5px 12px;font-size:13px}
+  .b-head{background:var(--plum);padding:18px 20px}
+  .b-head small{display:block;color:var(--gold);font-size:10px;font-weight:700;letter-spacing:.06em}
+  .b-head b{color:#fff;font-size:20px}
+  .b-body{padding:18px 20px}
+  .b-row{display:flex;font-size:13px;padding:4px 0;gap:8px}
+  .b-row > span{width:30%;flex:none;color:var(--mute)}
+  .b-row > b{flex:1;font-weight:400}.b-row > b.s{font-weight:700}
+  .b-row small{display:block;font-size:11px;color:var(--mute);font-weight:400}
+  .b-sep{height:1px;background:var(--line);margin:10px 0}
+  .b-code{background:var(--gold-soft);border-radius:8px;padding:12px 14px;margin-top:14px}
+  .b-code small{font-size:11px;color:var(--gold-text)}
+  .b-code b{display:block;font-size:20px;word-break:break-all}
+  .b-foot{padding:0 20px 16px;font-size:11px;color:var(--mute)}
+  .b-foot div{border-top:1px solid var(--line);padding-top:10px}
+  .ph{color:#C3BEC8}
+  /* 送出列 */
+  .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(247,245,242,.96);backdrop-filter:blur(6px);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  .bar-in{max-width:720px;margin:0 auto}
+  .btn{width:100%;height:52px;border:0;border-radius:12px;background:var(--plum);color:#fff;font-weight:700;font-size:16px;cursor:pointer}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--plum);border:1px solid var(--line)}
+  .btn.danger{background:var(--bad)}
+  /* 紀錄 */
+  .tool{display:flex;gap:8px;margin-bottom:12px}
+  .tool input{flex:1}
+  .tool button{flex:none;width:46px;height:46px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:18px}
+  .rec{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
+  .rec.pending{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+  .rec-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .rec-id{font-size:12px;color:var(--mute);font-weight:600}
+  .rec-name{font-weight:700;font-size:17px}
+  .rec-name small{font-weight:500;color:var(--mute);font-size:13px;margin-left:6px}
+  .rec-sub{font-size:13px;color:var(--mute);margin-top:2px}
+  .rec-info{font-size:14px;margin-top:8px}
+  .rec-code{display:inline-block;margin-top:6px;font-weight:700;background:var(--gold-soft);padding:2px 8px;border-radius:6px;word-break:break-all}
+  .rec-err{font-size:12px;color:var(--bad);background:var(--bad-bg);padding:6px 8px;border-radius:6px;margin-top:8px}
+  .rec-act{display:flex;gap:8px;margin-top:10px}
+  .rec-act button{flex:1;height:40px;border-radius:9px;border:1px solid var(--line);background:#fff;font-weight:600;font-size:14px;cursor:pointer}
+  .rec-act button.main{background:var(--plum);color:#fff;border-color:var(--plum)}
+  .rec-act button.del{color:var(--bad);flex:0 0 auto;padding:0 14px}
+  .badge{flex:none;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;background:#EEE;color:#777}
+  .badge.ok{background:var(--ok-bg);color:var(--ok)}
+  .badge.bad{background:var(--bad-bg);color:var(--bad)}
+  .badge.wait{background:var(--warn-bg);color:var(--warn)}
+  /* 對話框與提示 */
+  .mask{position:fixed;inset:0;background:rgba(20,12,28,.5);display:none;align-items:flex-end;justify-content:center;z-index:20}
+  .mask.on{display:flex}
+  .sheet{background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:20px 16px calc(16px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
+  @media(min-width:600px){.mask{align-items:center}.sheet{border-radius:18px}}
+  .sheet h2{margin:0 0 6px;font-size:18px}
+  .sheet p{margin:0 0 14px;color:var(--mute);font-size:14px}
+  .sum{background:var(--bg);border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:14px}
+  .sum div{display:flex;padding:3px 0;gap:8px}.sum span{width:32%;flex:none;color:var(--mute)}
+  .sheet .btns{display:grid;gap:8px}
+  .sheet input[type=text]{margin-bottom:14px}
+  .chk{display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:14px}
+  .chk input{width:20px;height:20px}
+  .toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-140%);transition:transform .25s;z-index:30;background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;max-width:92vw;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+  .toast.on{transform:translate(-50%,0)}
+  .toast.bad{background:var(--bad)}
+  .loading{padding:40px;text-align:center;color:var(--mute)}
+  .err-box{color:var(--bad);background:var(--bad-bg);border-radius:10px;padding:12px;font-size:14px;margin-bottom:12px;display:none}
+  .err-box.on{display:block}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-row">
+    <div class="brand"><small>INSPIRE · 小魏JOY</small><b>訂房後台</b></div>
+    <div class="who"><div id="staffName"></div><span class="quota" id="quota">訊息額度 …</span></div>
+  </div>
+  <nav class="tabs">
+    <button class="tab" data-tab="todo">待處理<span id="todoDot"></span></button>
+    <button class="tab on" data-tab="new">新增訂房</button>
+    <button class="tab" data-tab="list">所有紀錄</button>
+  </nav>
+</header>
+
+<main>
+  <!-- 待處理 -->
+  <section class="panel" id="p-todo">
+    <div id="todoList"><div class="loading">載入中…</div></div>
+  </section>
+
+  <!-- 新增訂房 -->
+  <section class="panel on" id="p-new">
+    <div class="err-box" id="formErr"></div>
+
+    <div class="card">
+      <h3>傳送給哪位客人</h3>
+      <div id="custPicked" style="display:none"></div>
+      <div id="custSearch">
+        <input type="search" id="custQ" placeholder="搜尋姓名、英文名或會員ID" autocomplete="off">
+        <div class="list" id="custList"><div class="loading">載入中…</div></div>
+        <div class="hint">找不到客人？請客人先加入官方帳號並完成會員登記，再 <button type="button" class="link" id="custReload">重新整理名單</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>訂房資料</h3>
+      <label class="f req" for="memberId">會員ID</label>
+      <input type="text" id="memberId" class="upper" autocomplete="off">
+      <div class="row2">
+        <div>
+          <label class="f req" for="nameZh">中文姓名</label>
+          <input type="text" id="nameZh" autocomplete="off">
+        </div>
+        <div>
+          <label class="f req" for="nameEn">英文姓名</label>
+          <input type="text" id="nameEn" class="upper" autocomplete="off" placeholder="CHEN CHIH MING">
+        </div>
+      </div>
+
+      <label class="f req">樓</label>
+      <div class="seg" id="tower"></div>
+
+      <label class="f req">房型</label>
+      <div class="seg" id="room"></div>
+
+      <div class="row2">
+        <div>
+          <label class="f req" for="ci">入住日期</label>
+          <input type="date" id="ci">
+        </div>
+        <div>
+          <label class="f req" for="co">退房日期</label>
+          <input type="date" id="co">
+        </div>
+      </div>
+      <div class="nights" id="nights"></div>
+
+      <label class="f req">人數</label>
+      <div class="seg" id="people"></div>
+
+      <label class="f req" for="code">訂房代號</label>
+      <input type="text" id="code" autocomplete="off" placeholder="飯店給的訂房確認號碼">
+    </div>
+
+    <div class="card">
+      <h3>客人會收到</h3>
+      <div class="preview-wrap">
+        <div class="chat-name">韓國INSPIRE 小魏JOY</div>
+        <div class="bubble" id="preview"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 所有紀錄 -->
+  <section class="panel" id="p-list">
+    <div class="seg" id="kindSeg" style="margin-bottom:12px">
+      <button type="button" class="on" data-v="room">訂房</button>
+      <button type="button" data-v="car">訂車</button>
+    </div>
+    <div class="tool">
+      <input type="search" id="recQ" placeholder="搜尋姓名、會員ID、代號、航班">
+      <button id="refresh" title="重新整理">↻</button>
+    </div>
+    <div id="recList"><div class="loading">載入中…</div></div>
+  </section>
+</main>
+
+<div class="bar" id="bar">
+  <div class="bar-in"><button class="btn" id="submit" disabled>確認並傳送給客人</button></div>
+</div>
+
+<div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const KEY = <?!= keyJson ?>;
+  const STAFF = <?!= staffJson ?>;
+
+  const S = {
+    customers: [], rooms: [], cars: [],
+    cfg: { TOWERS: ['輝映樓','海洋樓'], ROOMS: { '輝映樓': ['豪華大床房','豪華雙床房'], '海洋樓': ['豪華大床房','豪華雙床房'] }, MAX_ROOM_PEOPLE: 2, CHECKIN_TIME: '15:00', CHECKOUT_TIME: '11:00', NOTE_ARRIVE: '' },
+    picked: null, tower: '', room: '', people: 0, busy: false, kind: 'room',
+  };
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function call(fn, ...args) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve)
+        .withFailureHandler(e => reject(e && e.message ? e : new Error(String(e))))[fn](KEY, ...args);
+    });
+  }
+
+  function toast(msg, bad) {
+    const t = $('toast');
+    t.textContent = msg; t.className = 'toast on' + (bad ? ' bad' : '');
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.className = 'toast' + (bad ? ' bad' : ''), bad ? 6000 : 3200);
+  }
+
+  /* ---------- 日期 ---------- */
+  const pad = n => String(n).padStart(2, '0');
+  function daysBetween(a, b) {
+    if (!a || !b) return 0;
+    const pa = a.split('-').map(Number), pb = b.split('-').map(Number);
+    return Math.round((Date.UTC(pb[0], pb[1]-1, pb[2]) - Date.UTC(pa[0], pa[1]-1, pa[2])) / 86400000);
+  }
+  function fmtYmd(ymd) { if (!ymd) return ''; const p = ymd.slice(0, 10).split('-'); return `${p[0]}/${p[1]}/${p[2]}`; }
+  function fmtDT(dt) { return dt ? fmtYmd(dt) + ' ' + dt.slice(11, 16) : ''; }
+  function fmtMD(ymd) { if (!ymd) return ''; const p = ymd.slice(0, 10).split('-'); return `${p[1]}/${p[2]}`; }
+  function todayYmd() { return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10); }
+  function addDays(ymd, n) { const p = ymd.split('-').map(Number); return new Date(Date.UTC(p[0], p[1]-1, p[2] + n)).toISOString().slice(0, 10); }
+
+  /* ---------- 分段按鈕 ---------- */
+  function seg(el, values, key, labelFn) {
+    el.innerHTML = values.map(v => `<button type="button" data-v="${esc(v)}">${esc(labelFn ? labelFn(v) : v)}</button>`).join('');
+    el.onclick = (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      S[key] = key === 'people' ? Number(b.dataset.v) : b.dataset.v;
+      [...el.children].forEach(c => c.classList.toggle('on', c === b));
+      if (key === 'tower') roomSeg();
+      update();
+    };
+    if (S[key]) [...el.children].forEach(c => c.classList.toggle('on', String(c.dataset.v) === String(S[key])));
+  }
+
+  /* 房型依樓而不同（輝映樓有套房） */
+  function roomSeg() {
+    const list = (S.cfg.ROOMS && S.cfg.ROOMS[S.tower]) || [];
+    if (S.room && list.indexOf(S.room) < 0) S.room = '';
+    if (!S.tower) { $('room').innerHTML = '<div class="hint" style="padding:10px;margin:0">請先選樓</div>'; $('room').onclick = null; return; }
+    seg($('room'), list, 'room');
+  }
+
+  /* ---------- 客人 ---------- */
+  const registered = c => c.regStatus === '已綁定' && !!c.memberId;
+  function custTitle(c) {
+    return registered(c) ? `${esc(c.nameZh)}` : `${esc(c.lineName || '(未命名)')}<span class="tag">未登記</span>`;
+  }
+  function custSub(c) {
+    if (c.status === '已封鎖') return '已封鎖官方帳號';
+    if (registered(c)) return `${c.nameEn}・會員 ${c.memberId}`;
+    if (c.regStatus === '待綁定') return '已上傳會員卡，等待綁定';
+    if (c.regStatus === '辦卡中') return '已上傳護照，等待辦卡';
+    return '還沒登記會員卡（LINE 顯示名稱）';
+  }
+  const initial = c => esc((c.nameZh || c.lineName || '?').trim().charAt(0));
+
+  function renderCustList() {
+    const q = $('custQ').value.trim().toLowerCase();
+    const list = S.customers.filter(c => !q || [c.nameZh, c.nameEn, c.memberId, c.lineName].some(v => String(v || '').toLowerCase().includes(q)));
+    $('custList').innerHTML = list.length
+      ? list.slice(0, 80).map(c => `
+        <div class="opt ${c.status === '已封鎖' ? 'blocked' : ''}" data-uid="${esc(c.uid)}">
+          <div class="avatar">${initial(c)}</div>
+          <div class="meta"><b>${custTitle(c)}</b><span>${esc(custSub(c))}</span></div>
+        </div>`).join('')
+      : `<div class="empty">${S.customers.length ? '找不到符合的客人' : '還沒有客人資料。客人加入官方帳號後就會出現在這裡。'}</div>`;
+  }
+
+  function pickCustomer(uid) {
+    const c = S.customers.find(x => x.uid === uid);
+    if (!c) return;
+    if (c.status === '已封鎖') { toast('這位客人已封鎖官方帳號，無法傳送。', true); return; }
+    S.picked = c;
+    $('custPicked').innerHTML = `
+      <div class="picked">
+        <div class="avatar">${initial(c)}</div>
+        <div class="meta"><b>${custTitle(c)}</b><span>${esc(custSub(c))}</span></div>
+        <button type="button" class="link" id="custChange">更換</button>
+      </div>`;
+    $('custPicked').style.display = '';
+    $('custSearch').style.display = 'none';
+    $('custChange').onclick = () => {
+      S.picked = null; $('custPicked').style.display = 'none'; $('custSearch').style.display = '';
+      $('custQ').focus(); update();
+    };
+    $('memberId').value = c.memberId || '';
+    $('nameZh').value = c.nameZh || '';
+    $('nameEn').value = c.nameEn || '';
+    update();
+  }
+
+  /* ---------- 表單 ---------- */
+  function formData() {
+    return {
+      uid: S.picked ? S.picked.uid : '',
+      memberId: $('memberId').value.trim().toUpperCase(),
+      nameZh: $('nameZh').value.trim(),
+      nameEn: $('nameEn').value.trim().replace(/\s+/g, ' ').toUpperCase(),
+      tower: S.tower, room: S.room, ci: $('ci').value, co: $('co').value, people: S.people,
+      code: $('code').value.trim(),
+    };
+  }
+  function problems(d) {
+    const p = [];
+    if (!d.uid) p.push('選擇客人');
+    if (!d.memberId) p.push('會員ID');
+    if (!d.nameZh) p.push('中文姓名');
+    if (!/^[A-Z][A-Z ,.'-]{1,59}$/.test(d.nameEn)) p.push('英文姓名');
+    if (!d.tower) p.push('樓');
+    if (!d.room) p.push('房型');
+    if (!d.ci || !d.co) p.push('日期');
+    else if (daysBetween(d.ci, d.co) < 1) p.push('退房要晚於入住');
+    if (!d.people) p.push('人數');
+    if (!d.code) p.push('訂房代號');
+    return p;
+  }
+
+  function update() {
+    const d = formData();
+    const n = daysBetween(d.ci, d.co);
+    $('nights').textContent = d.ci && d.co ? (n >= 1 ? `共 ${n} 晚` : '⚠ 退房日期要晚於入住日期') : '';
+    $('preview').innerHTML = noticeHtml(d);
+    const p = problems(d);
+    $('submit').disabled = p.length > 0 || S.busy;
+    $('submit').textContent = S.busy ? '傳送中…' : (p.length ? `還缺：${p.slice(0, 3).join('、')}${p.length > 3 ? '…' : ''}` : '確認並傳送給客人');
+  }
+
+  /* 客人在聊天室收到的簡短通知（按下方按鈕打開彈窗看完整資料） */
+  function noticeHtml(b) {
+    const v = (x, ph) => x ? esc(x) : `<span class="ph">${ph}</span>`;
+    return `<div class="b-text">✅ 訂房確認<br><br>${v(b.nameZh, '中文姓名')} ${v(b.nameEn, 'ENGLISH NAME')}<br>
+      ${v(b.tower, '樓')}・${v(b.room, '房型')}<br>
+      入住日期：${b.ci ? esc(fmtYmd(b.ci) + ' ' + S.cfg.CHECKIN_TIME) : v('', '—')}<br>
+      退房日期：${b.co ? esc(fmtYmd(b.co) + ' ' + S.cfg.CHECKOUT_TIME) : v('', '—')}<br>
+      訂房代號：${v(b.code, '訂房代號')}</div>
+      <div class="b-qr"><span>📋 查看我的預約</span></div>`;
+  }
+
+  /* （舊版卡片排版，保留給預覽參考） */
+  function roomBubbleHtml(b, mode, placeholder) {
+    const v = (x, ph) => x ? esc(x) : (placeholder ? `<span class="ph">${ph}</span>` : '-');
+    const row = (l, val, strong) => `<div class="b-row"><span>${l}</span><b class="${strong ? 's' : ''}">${val}</b></div>`;
+    const title = { confirmed: '訂房確認', pending: '訂房需求已收到', cancelled: '訂房未成立' }[mode];
+    return `
+      <div class="b-head" style="${mode === 'cancelled' ? 'background:#5B5560' : ''}"><small>INSPIRE ENTERTAINMENT RESORT</small><b>${title}</b></div>
+      <div class="b-body">
+        ${row('會員ID', v(b.memberId, '會員ID'))}
+        ${row('客人姓名', `${v(b.nameZh, '中文姓名')}<small>${b.nameEn ? esc(b.nameEn) : (placeholder ? '<span class="ph">ENGLISH NAME</span>' : '')}</small>`, true)}
+        ${row('樓', v(b.tower, '—'))}
+        ${row('房型', v(b.room, '—'))}
+        <div class="b-sep"></div>
+        ${row('入住日期', b.ci ? esc(fmtYmd(b.ci) + ' ' + S.cfg.CHECKIN_TIME) : v('', '—'), true)}
+        ${row('退房日期', b.co ? esc(fmtYmd(b.co) + ' ' + S.cfg.CHECKOUT_TIME) : v('', '—'), true)}
+        <div class="b-code"><small>訂房代號</small><b>${v(b.code, '訂房代號')}</b></div>
+      </div>
+      <div class="b-foot"><div>請保留此訊息。有任何問題直接回覆給小魏；隨時傳「我的預約」可再次查看。</div></div>`;
+  }
+
+  function resetForm() {
+    S.picked = null; S.tower = ''; S.room = ''; S.people = 0;
+    ['memberId', 'nameZh', 'nameEn', 'ci', 'co', 'code', 'custQ'].forEach(id => $(id).value = '');
+    [$('tower'), $('people')].forEach(el => [...el.children].forEach(c => c.classList.remove('on')));
+    roomSeg();
+    $('custPicked').style.display = 'none'; $('custSearch').style.display = '';
+    renderCustList(); update();
+  }
+
+  /* ---------- 對話框 ---------- */
+  function openSheet(html) { $('sheet').innerHTML = html; $('mask').classList.add('on'); }
+  function closeSheet() { $('mask').classList.remove('on'); }
+  $('mask').addEventListener('click', e => { if (e.target === $('mask') && !S.busy) closeSheet(); });
+
+  function confirmSubmit() {
+    const d = formData();
+    const n = daysBetween(d.ci, d.co);
+    openSheet(`
+      <h2>確認傳送？</h2>
+      <p>送出後，客人會立刻在 LINE 收到訂房確認卡（使用 1 則訊息額度）。</p>
+      <div class="sum">
+        <div><span>會員ID</span>${esc(d.memberId)}</div>
+        <div><span>客人姓名</span>${esc(d.nameZh)}　${esc(d.nameEn)}</div>
+        <div><span>樓／房型</span>${esc(d.tower)}・${esc(d.room)}</div>
+        <div><span>入住日期</span>${esc(fmtYmd(d.ci))} ${esc(S.cfg.CHECKIN_TIME)}</div>
+        <div><span>退房日期</span>${esc(fmtYmd(d.co))} ${esc(S.cfg.CHECKOUT_TIME)}（${n} 晚）</div>
+        <div><span>人數</span>${d.people} 位（不顯示給客人）</div>
+        <div><span>訂房代號</span><b>${esc(d.code)}</b></div>
+      </div>
+      <div class="btns">
+        <button class="btn" id="go">確認傳送</button>
+        <button class="btn ghost" id="back">返回修改</button>
+      </div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = async () => {
+      S.busy = true; $('go').disabled = true; $('go').textContent = '傳送中…'; update();
+      try {
+        const r = await call('apiSubmitRoom', d);
+        S.rooms = r.rooms; setQuota(r.quota); renderAll();
+        closeSheet();
+        const c = S.customers.find(x => x.uid === d.uid);
+        if (c) { c.memberId = c.memberId || d.memberId; c.nameZh = c.nameZh || d.nameZh; c.nameEn = c.nameEn || d.nameEn; }
+        if (r.ok) { resetForm(); toast(r.msg); }
+        else { toast(r.msg, true); switchTab('list'); }
+      } catch (e) {
+        closeSheet(); showErr(e.message);
+      } finally { S.busy = false; update(); }
+    };
+  }
+
+  function showErr(msg) {
+    const b = $('formErr'); b.textContent = msg; b.classList.add('on');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    toast(msg, true);
+  }
+
+  /* ---------- 紀錄 ---------- */
+  const PENDING = ['待處理', '待安排'];
+  function badge(st) {
+    const cls = st === '已確認' || st === '已安排' ? 'ok' : st === '通知失敗' ? 'bad' : PENDING.includes(st) ? 'wait' : '';
+    return `<span class="badge ${cls}">${esc(st)}</span>`;
+  }
+
+  function roomCard(b) {
+    const pending = b.status === '待處理';
+    const acts = b.status === '已取消' ? '' : `<div class="rec-act">
+      ${pending ? `<button class="main" data-act="code" data-kind="room" data-id="${esc(b.id)}">填入訂房代號並通知客人</button>`
+        : `<button data-act="resend" data-kind="room" data-id="${esc(b.id)}">${b.status === '通知失敗' ? '重試發送' : '重新發送'}</button>`}
+      <button class="del" data-act="cancel" data-kind="room" data-id="${esc(b.id)}">${pending ? '無法安排' : '取消'}</button>
+    </div>`;
+    return `<div class="rec ${pending ? 'pending' : ''}">
+      <div class="rec-top">
+        <div><div class="rec-id">🏨 ${esc(b.id)}・${esc(b.source)}</div>
+          <div class="rec-name">${esc(b.nameZh)}<small>${esc(b.nameEn)}</small></div>
+          <div class="rec-sub">會員 ${esc(b.memberId)}</div></div>
+        ${badge(b.status)}
+      </div>
+      <div class="rec-info">${esc(b.tower)}・${esc(b.room)}・${esc(b.people)} 位<br>
+        ${esc(fmtYmd(b.ci))} ${esc(S.cfg.CHECKIN_TIME)} → ${esc(fmtYmd(b.co))} ${esc(S.cfg.CHECKOUT_TIME)}（${esc(b.nights)} 晚）</div>
+      ${b.code ? `<div class="rec-code">${esc(b.code)}</div>` : ''}
+      <div class="rec-sub">${esc(b.created.slice(5, 16))} 建立${b.staff ? '・' + esc(b.staff) + ' 處理' : ''}</div>
+      ${b.note && b.status !== '已取消' ? `<div class="rec-err">${esc(b.note)}</div>` : ''}
+      ${acts}
+    </div>`;
+  }
+
+  function carCard(c) {
+    const pending = c.status === '待安排';
+    const acts = c.status === '已取消' ? '' : `<div class="rec-act">
+      ${pending ? `<button class="main" data-act="arrange" data-kind="car" data-id="${esc(c.id)}">已訂好車，通知客人</button>`
+        : `<button data-act="resend" data-kind="car" data-id="${esc(c.id)}">${c.status === '通知失敗' ? '重試發送' : '重新發送'}</button>`}
+      <button class="del" data-act="cancel" data-kind="car" data-id="${esc(c.id)}">${pending ? '無法安排' : '取消'}</button>
+    </div>`;
+    return `<div class="rec ${pending ? 'pending' : ''}">
+      <div class="rec-top">
+        <div><div class="rec-id">🚗 ${esc(c.id)}・${esc(c.type)}</div>
+          <div class="rec-name">${esc(c.nameZh)}<small>${esc(c.nameEn)}</small></div>
+          <div class="rec-sub">會員 ${esc(c.memberId)}</div></div>
+        ${badge(c.status)}
+      </div>
+      <div class="rec-info">航班 <b>${esc(c.flight)}</b>・${esc(c.pax)} 位上車<br>
+        ${c.type === '接機' ? '抵達' : '起飛'} ${esc(fmtDT(c.ftime))}
+        ${c.type === '送機' ? `<br>上車 <b>${esc(fmtDT(c.pickup))}</b>・VIP LOBBY` : ''}</div>
+      <div class="rec-sub">${esc(c.created.slice(5, 16))} 建立${c.staff ? '・' + esc(c.staff) + ' 處理' : ''}</div>
+      ${c.note && c.status !== '已取消' ? `<div class="rec-err">${esc(c.note)}</div>` : ''}
+      ${acts}
+    </div>`;
+  }
+
+  function regCard(c) {
+    const applying = c.regStatus === '辦卡中';
+    return `<div class="rec pending">
+      <div class="rec-top">
+        <div><div class="rec-id">${applying ? '📘 代辦會員卡（護照）' : '🪪 會員卡綁定'}</div>
+          <div class="rec-name">${esc(c.nameZh)}<small>${esc(c.nameEn)}</small></div>
+          <div class="rec-sub">LINE ${esc(c.lineName)}・${esc(String(c.regAt).slice(5, 16))} 上傳</div></div>
+        <span class="badge wait">${esc(c.regStatus)}</span>
+      </div>
+      <div class="rec-info">${applying ? '用護照幫客人辦 INSPIRE 會員卡，辦好後輸入卡號綁定。綁定後護照照片會自動刪除。' : '看會員卡照片，輸入卡號綁定到客人的 LINE。'}</div>
+      ${c.docUrl && /^https:/.test(c.docUrl) ? `<a class="rec-code" style="text-decoration:none;color:var(--plum)" href="${esc(c.docUrl)}" target="_blank" rel="noopener">查看${esc(c.docType)}照片 ↗</a>` : ''}
+      <div class="rec-act">
+        <button class="main" data-reg="bind" data-uid="${esc(c.uid)}">${applying ? '卡辦好了，輸入卡號' : '輸入會員卡號綁定'}</button>
+        <button class="del" data-reg="reject" data-uid="${esc(c.uid)}">請重傳</button>
+      </div>
+    </div>`;
+  }
+
+  function renderTodo() {
+    const rooms = S.rooms.filter(b => PENDING.includes(b.status) || b.status === '通知失敗');
+    const cars = S.cars.filter(c => PENDING.includes(c.status) || c.status === '通知失敗');
+    const regs = S.customers.filter(c => c.regStatus === '待綁定' || c.regStatus === '辦卡中');
+    const n = rooms.length + cars.length + regs.length;
+    $('todoDot').innerHTML = n ? `<span class="dot">${n}</span>` : '';
+    $('todoList').innerHTML = n
+      ? regs.map(regCard).join('') + rooms.map(roomCard).join('') + cars.map(carCard).join('')
+      : '<div class="empty">目前沒有待處理的事項 👍</div>';
+  }
+
+  function renderRecs() {
+    const q = $('recQ').value.trim().toLowerCase();
+    const src = S.kind === 'room' ? S.rooms : S.cars;
+    const list = src.filter(x => !q || [x.id, x.nameZh, x.nameEn, x.memberId, x.code, x.flight].some(v => String(v || '').toLowerCase().includes(q)));
+    $('recList').innerHTML = list.length ? list.map(S.kind === 'room' ? roomCard : carCard).join('')
+      : `<div class="empty">${src.length ? '找不到符合的紀錄' : '還沒有紀錄'}</div>`;
+  }
+
+  function renderAll() { renderTodo(); renderRecs(); }
+
+  document.addEventListener('click', e => {
+    const g = e.target.closest('button[data-reg]');
+    if (g) {
+      const c = S.customers.find(x => x.uid === g.dataset.uid); if (!c) return;
+      if (g.dataset.reg === 'bind') {
+        openSheet(`<h2>綁定會員卡號</h2><p>${esc(c.nameZh)}（${esc(c.nameEn)}）・LINE ${esc(c.lineName)}<br>綁定後客人會收到通知，就可以直接訂房、訂車。</p>
+          <input type="text" id="memIn" class="upper" placeholder="會員卡號" autocomplete="off">
+          <div class="btns"><button class="btn" id="go" disabled>綁定並通知客人</button><button class="btn ghost" id="back">取消</button></div>`);
+        const inp = $('memIn'); inp.oninput = () => $('go').disabled = !/^[A-Za-z0-9-]{3,30}$/.test(inp.value.trim());
+        setTimeout(() => inp.focus(), 50);
+        $('back').onclick = closeSheet;
+        $('go').onclick = () => runReg($('go'), 'apiBind', [c.uid, inp.value.trim().toUpperCase()]);
+      } else {
+        openSheet(`<h2>請 ${esc(c.nameZh)} 重新上傳？</h2><p>原本的照片會刪除，客人會收到「麻煩再上傳一次」的訊息。</p>
+          <div class="seg" id="why" style="flex-wrap:wrap;margin-bottom:14px">
+            <button type="button" class="on" data-v="照片有點模糊">照片模糊</button>
+            <button type="button" data-v="照片看不到會員卡號">看不到卡號</button>
+            <button type="button" data-v="上傳的不是會員卡或護照資料頁">傳錯照片</button></div>
+          <div class="btns"><button class="btn danger" id="go">請客人重傳</button><button class="btn ghost" id="back">取消</button></div>`);
+        $('why').onclick = ev => { const x = ev.target.closest('button'); if (!x) return; [...$('why').children].forEach(y => y.classList.toggle('on', y === x)); };
+        $('back').onclick = closeSheet;
+        $('go').onclick = () => runReg($('go'), 'apiReject', [c.uid, $('why').querySelector('.on').dataset.v]);
+      }
+      return;
+    }
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const list = b.dataset.kind === 'room' ? S.rooms : S.cars;
+    const item = list.find(x => x.id === b.dataset.id); if (!item) return;
+    ({ code: askCode, arrange: confirmArrange, resend: confirmResend, cancel: confirmCancel })[b.dataset.act](item, b.dataset.kind);
+  });
+
+  function itemSummary(x, kind) {
+    return kind === 'room'
+      ? `${esc(x.nameZh)}（${esc(x.nameEn)}）・${esc(x.tower)} ${esc(x.room)}・${esc(fmtMD(x.ci))} 入住 ${esc(x.nights)} 晚`
+      : `${esc(x.nameZh)}・${esc(x.type)} ${esc(x.flight)}・${esc(fmtDT(x.type === '送機' ? x.pickup : x.ftime))}`;
+  }
+
+  function askCode(b) {
+    openSheet(`
+      <h2>填入訂房代號</h2>
+      <p>${b.id}｜${itemSummary(b, 'room')}<br>送出後客人會收到訂房確認卡（使用 1 則訊息額度）。</p>
+      <input type="text" id="codeIn" placeholder="訂房代號" autocomplete="off">
+      <div class="btns"><button class="btn" id="go" disabled>傳送給客人</button><button class="btn ghost" id="back">取消</button></div>`);
+    const inp = $('codeIn');
+    inp.oninput = () => $('go').disabled = !inp.value.trim();
+    setTimeout(() => inp.focus(), 50);
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => runAction($('go'), 'apiConfirmRoom', [b.id, inp.value.trim()]);
+  }
+
+  function confirmArrange(c) {
+    openSheet(`
+      <h2>車子已經訂好了？</h2>
+      <p>${c.id}｜${itemSummary(c, 'car')}<br>客人會收到「${esc(c.type)}已安排好」的通知（使用 1 則訊息額度）。</p>
+      <div class="btns"><button class="btn" id="go">已訂好，通知客人</button><button class="btn ghost" id="back">取消</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => runAction($('go'), 'apiArrangeCar', [c.id]);
+  }
+
+  function confirmResend(x, kind) {
+    openSheet(`
+      <h2>重新發送 ${esc(x.id)}？</h2>
+      <p>${itemSummary(x, kind)}<br>客人會再收到一次通知卡（使用 1 則訊息額度）。</p>
+      <div class="btns"><button class="btn" id="go">重新發送</button><button class="btn ghost" id="back">取消</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => runAction($('go'), 'apiResend', [kind, x.id]);
+  }
+
+  function confirmCancel(x, kind) {
+    const pending = PENDING.includes(x.status);
+    openSheet(`
+      <h2>${pending ? '無法安排' : '取消'} ${esc(x.id)}？</h2>
+      <p>${itemSummary(x, kind)}<br>紀錄會標示為「已取消」，不會刪除。${kind === 'room' && !pending ? '記得也要在飯店系統取消。' : ''}</p>
+      <label class="chk"><input type="checkbox" id="notify" checked> 通知客人「這筆無法安排，小魏會再與您聯繫」</label>
+      <div class="btns"><button class="btn danger" id="go">確認</button><button class="btn ghost" id="back">返回</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => runAction($('go'), 'apiCancel', [kind, x.id, $('notify').checked]);
+  }
+
+  async function runReg(btn, fn, args) {
+    S.busy = true; btn.disabled = true; btn.textContent = '處理中…';
+    try {
+      const r = await call(fn, ...args);
+      S.customers = r.customers; renderCustList(); renderAll(); closeSheet();
+      toast((r.ok ? '' : '⚠ ') + r.msg, !r.ok);
+    } catch (e) { closeSheet(); toast(e.message, true); }
+    finally { S.busy = false; update(); }
+  }
+
+  async function runAction(btn, fn, args) {
+    S.busy = true; btn.disabled = true; btn.textContent = '處理中…';
+    try {
+      const r = await call(fn, ...args);
+      if (r.rooms) S.rooms = r.rooms;
+      if (r.cars) S.cars = r.cars;
+      setQuota(r.quota); renderAll(); closeSheet();
+      toast((r.ok ? '' : '⚠ ') + r.msg, !r.ok);
+    } catch (e) {
+      closeSheet(); toast(e.message, true);
+    } finally { S.busy = false; update(); }
+  }
+
+  /* ---------- 其他 ---------- */
+  function setQuota(q) {
+    const el = $('quota');
+    if (!q || q.used == null) { el.textContent = '訊息額度 —'; el.title = (q && q.error) || ''; return; }
+    el.textContent = q.limit ? `本月訊息 ${q.used}/${q.limit}` : `本月已用 ${q.used} 則`;
+    el.classList.toggle('low', !!q.limit && q.limit - q.used <= 20);
+  }
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+    ['todo', 'new', 'list'].forEach(p => $('p-' + p).classList.toggle('on', p === name));
+    $('bar').style.display = name === 'new' ? '' : 'none';
+  }
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
+  $('kindSeg').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.kind = b.dataset.v;
+    [...$('kindSeg').children].forEach(c => c.classList.toggle('on', c === b));
+    renderRecs();
+  };
+
+  async function load(showToast) {
+    try {
+      const r = await call('apiRefresh');
+      S.customers = r.customers; S.rooms = r.rooms; S.cars = r.cars; S.cfg = r.cfg;
+      setQuota(r.quota);
+      seg($('tower'), S.cfg.TOWERS, 'tower');
+      roomSeg();
+      seg($('people'), Array.from({ length: S.cfg.MAX_ROOM_PEOPLE }, (_, i) => i + 1), 'people', v => v + ' 位');
+      renderCustList(); renderAll(); update();
+      // 有待處理就先打開待處理
+      if (!showToast && (S.rooms.concat(S.cars).some(x => PENDING.includes(x.status)) || S.customers.some(c => c.regStatus === '待綁定' || c.regStatus === '辦卡中'))) switchTab('todo');
+      if (showToast) toast('已更新');
+    } catch (e) {
+      ['custList', 'recList', 'todoList'].forEach(id => $(id).innerHTML = `<div class="empty">${esc(e.message)}</div>`);
+      toast(e.message, true);
+    }
+  }
+
+  $('staffName').textContent = STAFF;
+  $('custQ').addEventListener('input', renderCustList);
+  $('custList').addEventListener('click', e => { const o = e.target.closest('.opt'); if (o) pickCustomer(o.dataset.uid); });
+  $('recQ').addEventListener('input', renderRecs);
+  $('refresh').onclick = () => load(true);
+  $('custReload').onclick = () => load(true);
+  ['memberId', 'nameZh', 'nameEn', 'code'].forEach(id => $(id).addEventListener('input', () => { $('formErr').classList.remove('on'); update(); }));
+  $('ci').addEventListener('change', () => {
+    const ci = $('ci').value;
+    if (ci) {
+      $('co').min = addDays(ci, 1);
+      if (!$('co').value || daysBetween(ci, $('co').value) < 1) $('co').value = addDays(ci, 1);
+    }
+    update();
+  });
+  $('co').addEventListener('change', update);
+  $('submit').onclick = () => { $('formErr').classList.remove('on'); if (!problems(formData()).length) confirmSubmit(); };
+
+  seg($('tower'), S.cfg.TOWERS, 'tower');
+  roomSeg();
+  seg($('people'), [1, 2], 'people', v => v + ' 位');
+  update();
+  load(false);
+</script>
+</body>
+</html>
