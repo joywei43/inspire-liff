@@ -10,6 +10,9 @@
 
 const TZ = 'Asia/Taipei';
 
+// 試算表 ID（試算表網址 /d/ 和 /edit 中間那一段）。從試算表「擴充功能 → Apps Script」開的專案可以留空。
+const SHEET_ID = '';
+
 const CFG = {
   CHECKIN_TIME: '15:00',
   CHECKOUT_TIME: '11:00',
@@ -79,9 +82,36 @@ function onOpen() {
     .addToUi();
 }
 
+/* ----- 不管是從試算表選單或從 Apps Script 編輯器執行都能用 ----- */
+function ui_() { try { return SpreadsheetApp.getUi(); } catch (_) { return null; } }
+function notify_(msg) { const ui = ui_(); if (ui) ui.alert(msg); console.log(msg); return msg; }
+
+/**
+ * 從 Apps Script 編輯器直接執行（上方選函式 → 執行）。結果看下方「執行記錄」。
+ *   初始化            建立工作表（第一次）
+ *   測試連線          檢查兩個 LINE 帳號的金鑰
+ *   新增使用者_小魏    產生小魏的填單網址與小幫手綁定碼
+ *   新增使用者_助理    產生助理的填單網址與小幫手綁定碼
+ *   查看填單連結       列出所有人的填單網址
+ * LINE 金鑰、網址等設定放在「專案設定 → 指令碼屬性」：
+ *   LINE_TOKEN（客人帳號）、HELPER_TOKEN（小幫手）、WEBAPP_URL、LIFF_ID
+ */
+function 初始化() { setupSheets(); }
+function 測試連線() { testLine(); }
+function 新增使用者_小魏() { addStaffNamed_('小魏'); }
+function 新增使用者_助理() { addStaffNamed_('助理'); }
+function 查看填單連結() { listStaffLinks(); }
+
 function setupSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  PropertiesService.getScriptProperties().setProperty('SS_ID', ss.getId());
+  const props = PropertiesService.getScriptProperties();
+  let ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (_) {}
+  if (!ss) {
+    const id = props.getProperty('SS_ID') || SHEET_ID;
+    if (!id) throw new Error('找不到試算表：請在程式最上面的 SHEET_ID 填入試算表網址中的 ID。');
+    ss = SpreadsheetApp.openById(id);
+  }
+  props.setProperty('SS_ID', ss.getId());
   Object.keys(HEADERS).forEach(function (name) {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -94,7 +124,7 @@ function setupSheets() {
   });
   const blank = ss.getSheetByName('工作表1') || ss.getSheetByName('Sheet1');
   if (blank && ss.getSheets().length > 1 && blank.getLastRow() === 0) ss.deleteSheet(blank);
-  SpreadsheetApp.getUi().alert('✅ 工作表建立完成：客人、訂房、訂車、使用者、紀錄。\n\n下一步：部署網頁應用程式，然後執行「② 設定 LINE 金鑰與網址」。');
+  notify_('✅ 工作表建立完成：客人、訂房、訂車、使用者、紀錄。\n\n下一步：部署網頁應用程式，然後設定 LINE 金鑰與網址。');
 }
 
 function setupKeys() {
@@ -139,8 +169,13 @@ function addStaff() {
   const ui = SpreadsheetApp.getUi();
   const r = ui.prompt('③ 新增使用者', '請輸入名稱（例如：小魏、助理 Amy）', ui.ButtonSet.OK_CANCEL);
   if (r.getSelectedButton() !== ui.Button.OK) return;
-  const name = r.getResponseText().trim();
+  addStaffNamed_(r.getResponseText().trim());
+}
+
+function addStaffNamed_(name) {
   if (!name) return;
+  const exist = readRows_(SHEETS.STAFF).filter(function (s) { return s['名稱'] === name && isOn_(s['啟用']); })[0];
+  if (exist) { showStaffDialog_(name, exist['金鑰'], name + '（已存在，重新產生綁定碼）'); return; }
   const key = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
   appendText_(sheet_(SHEETS.STAFF), [name, key, '是', now_(), '']);
   showStaffDialog_(name, key, '已新增使用者');
@@ -170,7 +205,9 @@ function showStaffDialog_(name, key, title) {
     '<div style="font-size:22px;font-weight:bold;letter-spacing:2px;background:#F6F1E7;padding:10px;border-radius:8px;text-align:center">綁定 ' + code + '</div>' +
     '<p style="color:#666;font-size:12px">綁定碼 24 小時內有效、只能用一次。連結等同鑰匙，請私下傳給對方。<br>要停用某人時，把「使用者」工作表裡的「啟用」改成「否」。</p>' +
     '</div>').setWidth(460).setHeight(380);
-  SpreadsheetApp.getUi().showModalDialog(html, title);
+  const ui = ui_();
+  if (ui) ui.showModalDialog(html, title);
+  console.log(title + '｜' + name + '\n填單網址：' + (link || '（還沒設定 WEBAPP_URL）') + '\n小幫手綁定：用 ' + name + ' 的 LINE 傳「綁定 ' + code + '」給小幫手帳號（24 小時內有效）');
 }
 
 function makeBindCode_(key) {
@@ -193,14 +230,15 @@ function listStaffLinks() {
       (r['小幫手 userId'] ? '　<span style="color:#2F7D4F">✓ 已綁定小幫手</span>' : '　<span style="color:#999">未綁定小幫手</span>') +
       '<br><input style="width:100%;font-size:12px" readonly onclick="this.select()" value="' + esc_(staffLink_(r['金鑰']) || '（尚未設定網址）') + '"></li>';
   }).join('');
-  SpreadsheetApp.getUi().showModalDialog(
+  const ui = ui_();
+  if (ui) ui.showModalDialog(
     HtmlService.createHtmlOutput('<ul style="font-family:sans-serif;font-size:14px;padding-left:18px">' + (items || '<li>還沒有使用者</li>') + '</ul>')
       .setWidth(500).setHeight(340),
     '所有填單連結');
+  rows.forEach(function (r) { console.log(r['名稱'] + (isOn_(r['啟用']) ? '' : '（已停用）') + (r['小幫手 userId'] ? '｜已綁定小幫手' : '｜未綁定小幫手') + '\n' + (staffLink_(r['金鑰']) || '（尚未設定網址）')); });
 }
 
 function testLine() {
-  const ui = SpreadsheetApp.getUi();
   const props = PropertiesService.getScriptProperties();
   const lines = [];
   ['c', 'h'].forEach(function (who) {
@@ -217,7 +255,9 @@ function testLine() {
   });
   lines.push('網頁網址：' + (props.getProperty('WEBAPP_URL') || '尚未設定'));
   lines.push('彈窗 LIFF：' + (props.getProperty('LIFF_ID') ? 'https://liff.line.me/' + props.getProperty('LIFF_ID') : '尚未設定'));
-  ui.alert('LINE 連線測試\n\n' + lines.join('\n'));
+  const liff = props.getProperty('LIFF_ID');
+  if (liff && !props.getProperty('LOGIN_CHANNEL_ID')) props.setProperty('LOGIN_CHANNEL_ID', liff.split('-')[0]);
+  notify_('LINE 連線測試\n\n' + lines.join('\n'));
 }
 
 /* ============================================================
@@ -699,7 +739,8 @@ function verifyIdToken_(idToken) {
   const ck = 'idt_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken));
   const hit = cache.get(ck);
   if (hit) return hit;
-  const channelId = PropertiesService.getScriptProperties().getProperty('LOGIN_CHANNEL_ID');
+  const pp = PropertiesService.getScriptProperties();
+  const channelId = pp.getProperty('LOGIN_CHANNEL_ID') || String(pp.getProperty('LIFF_ID') || '').split('-')[0];
   if (!channelId) throw new Error('系統還沒設定 LIFF，請聯繫小魏。');
   const res = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/verify', {
     method: 'post', payload: { id_token: idToken, client_id: channelId }, muteHttpExceptions: true,
@@ -1403,7 +1444,8 @@ function nextId_(prefix) {
 
 function ss_() {
   const id = PropertiesService.getScriptProperties().getProperty('SS_ID');
-  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  if (id || SHEET_ID) return SpreadsheetApp.openById(id || SHEET_ID);
+  return SpreadsheetApp.getActiveSpreadsheet();
 }
 
 function sheet_(name) {
