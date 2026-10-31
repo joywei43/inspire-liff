@@ -55,6 +55,7 @@ const KW = {
   carDepart: /^(送機|我要送機)$/,
   my: /^(我的預約|我的訂房|查詢訂房|訂房查詢|查詢預約|我的接送)$/,
   reg: /^(會員登記|修改資料|會員資料|修改會員資料)$/,
+  about: /^(服務介紹|關於小魏|關於我們|帳號介紹|使用說明)$/,
   quit: /^(取消|算了|不用了|離開)$/,
 };
 const OK_WORDS = /^(已經?訂好了?|訂好了?|好了?|好的|ok|OK|Ok|已安排|安排好了?|done|搞定|完成)[!！。.~～]*$/;
@@ -342,6 +343,7 @@ function handleCustomer_(ev) {
 
   const txt = ev.message && ev.message.type === 'text' ? String(ev.message.text || '').trim() : '';
   if (!txt) return;
+  if (KW.about.test(txt)) { reply([menuText_(aboutText_(), uid)]); return; }
   if (KW.reg.test(txt)) { reply([reg ? linkText_('點下方按鈕查看會員資料 👇', [['🪪 會員資料', 'reg']], uid) : needReg()]); return; }
   if (KW.my.test(txt)) { reply([linkText_('點下方按鈕查看您的訂房和接送 👇', [['📋 我的預約', 'my']], uid)]); return; }
   if (KW.room.test(txt)) { reply([reg ? linkText_('點下方按鈕填寫訂房需求 👇', [['🏨 我要訂房', 'room']], uid) : needReg()]); return; }
@@ -418,6 +420,17 @@ function linkText_(text, buttons, uid) {
   if (items.length) msg.quickReply = { items: items };
   else if (!PropertiesService.getScriptProperties().getProperty('LIFF_ID')) log_('彈窗', '還沒設定 LIFF ID，按鈕沒有顯示');
   return msg;
+}
+
+/** 選單「服務介紹」：介紹這個官方帳號能做什麼 */
+function aboutText_() {
+  return '您好！我是 INSPIRE 度假村（韓國仁川）台灣貴賓專屬公關小魏 JOY 😊\n\n' +
+    '在這個帳號，您可以：\n' +
+    '🪪 會員卡登記：拍會員卡綁定 LINE；還沒有卡，上傳護照小魏幫您辦\n' +
+    '🏨 我要訂房：輝映樓・海洋樓各房型，訂好後會收到訂房代號\n' +
+    '🚗 我要訂車：機場接機・送機，安排好會通知您\n' +
+    '📋 我的預約：隨時查看訂房和接送的進度\n\n' +
+    '演唱會、活動安排或任何問題，直接在聊天室留言，小魏會親自回覆您 🙏';
 }
 
 function menuText_(text, uid) {
