@@ -33,7 +33,7 @@ const CFG = {
 const SHEETS = { CUST: '客人', ROOM: '訂房', CAR: '訂車', STAFF: '使用者', LOG: '紀錄' };
 const HEADERS = {
   '客人': ['LINE userId', 'LINE名稱', '會員ID', '中文姓名', '英文姓名', '狀態', '加入時間', '最後訊息', '備註',
-          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID'],
+          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId'],
   '訂房': ['編號', '狀態', '訂房代號', '會員ID', '中文姓名', '英文姓名', '樓', '房型', '入住日期', '退房日期', '晚數', '人數',
            '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
@@ -329,40 +329,89 @@ function handleCustomer_(ev) {
   const waiting = cust['登記狀態'] === REG.WAIT_BIND || cust['登記狀態'] === REG.APPLYING;
   const needReg = function () {
     return linkText_(waiting ? '小魏正在幫您' + (cust['登記狀態'] === REG.APPLYING ? '辦會員卡' : '綁定會員卡') + '，好了會馬上通知您 🙏'
-      : '預約前請先拍會員卡完成登記（只需要一次）👇', [[waiting ? '📋 查看進度' : '📷 拍會員卡登記', waiting ? 'my' : 'reg']]);
+      : '預約前請先拍會員卡完成登記（只需要一次）👇', [[waiting ? '📋 查看進度' : '📷 拍會員卡登記', waiting ? 'my' : 'reg']], uid);
   };
 
   if (ev.type === 'follow') {
     reply([reg
-      ? menuText_('歡迎回來，' + cust['中文姓名'] + '！需要訂房、訂車，或查看預約，點下面的按鈕就可以 👇')
+      ? menuText_('歡迎回來，' + cust['中文姓名'] + '！需要訂房、訂車，或查看預約，點下面的按鈕就可以 👇', uid)
       : linkText_('歡迎加入 ' + CFG.ACCOUNT_NAME + '！\n我是 INSPIRE 度假村的台灣貴賓專屬公關小魏 😊\n\n第一步：請拍一張您的 INSPIRE 會員卡，小魏幫您綁定到 LINE。\n還沒有會員卡？上傳護照，小魏幫您辦！',
-          [['📷 拍會員卡登記', 'reg']])]);
+          [['📷 拍會員卡登記', 'reg']], uid)]);
     return;
   }
 
   const txt = ev.message && ev.message.type === 'text' ? String(ev.message.text || '').trim() : '';
   if (!txt) return;
-  if (KW.reg.test(txt)) { reply([reg ? linkText_('點下方按鈕查看會員資料 👇', [['🪪 會員資料', 'reg']]) : needReg()]); return; }
-  if (KW.my.test(txt)) { reply([linkText_('點下方按鈕查看您的訂房和接送 👇', [['📋 我的預約', 'my']])]); return; }
-  if (KW.room.test(txt)) { reply([reg ? linkText_('點下方按鈕填寫訂房需求 👇', [['🏨 我要訂房', 'room']]) : needReg()]); return; }
+  if (KW.reg.test(txt)) { reply([reg ? linkText_('點下方按鈕查看會員資料 👇', [['🪪 會員資料', 'reg']], uid) : needReg()]); return; }
+  if (KW.my.test(txt)) { reply([linkText_('點下方按鈕查看您的訂房和接送 👇', [['📋 我的預約', 'my']], uid)]); return; }
+  if (KW.room.test(txt)) { reply([reg ? linkText_('點下方按鈕填寫訂房需求 👇', [['🏨 我要訂房', 'room']], uid) : needReg()]); return; }
   if (KW.car.test(txt) || KW.carArrive.test(txt) || KW.carDepart.test(txt)) {
-    reply([reg ? linkText_('點下方按鈕填寫接送需求 👇', [['🚗 我要訂車', 'car']]) : needReg()]);
+    reply([reg ? linkText_('點下方按鈕填寫接送需求 👇', [['🚗 我要訂車', 'car']], uid) : needReg()]);
     return;
   }
   // 其他訊息：一般聊天，由小魏在 LINE 官方帳號後台手動回覆
 }
 
 /** 彈窗網址；page = reg | room | car | my */
-function liffUrl_(page, id) {
+function liffUrl_(page, id, uid) {
   const liffId = PropertiesService.getScriptProperties().getProperty('LIFF_ID');
   if (!liffId) return '';
-  return 'https://liff.line.me/' + liffId + '?p=' + page + (id ? '&id=' + encodeURIComponent(id) : '');
+  return 'https://liff.line.me/' + liffId + '?p=' + page + (id ? '&id=' + encodeURIComponent(id) : '') +
+    (uid ? '&t=' + makeLinkToken_(uid) : '');
+}
+
+/* ----- 彈窗身分連結 -----
+ * 如果彈窗（LIFF）和客人帳號在同一個 LINE 服務提供者，彈窗拿到的 userId 就是客人的 userId，直接用。
+ * 如果不在同一個（例如找不到原本的開發者帳號），客人第一次從聊天室的按鈕打開時，
+ * 網址裡帶有簽章過的連結碼，系統會把「彈窗 userId」記到這位客人身上，之後從選單打開也認得。 */
+function linkSecret_() {
+  const props = PropertiesService.getScriptProperties();
+  let k = props.getProperty('LINK_SECRET');
+  if (!k) { k = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('LINK_SECRET', k); }
+  return k;
+}
+
+function makeLinkToken_(uid) {
+  const exp = Math.floor(Date.now() / 1000) + 30 * 86400;
+  const body = uid + '.' + exp;
+  const sig = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, linkSecret_())).replace(/=+$/, '').slice(0, 22);
+  return Utilities.base64EncodeWebSafe(body).replace(/=+$/, '') + '.' + sig;
+}
+
+function readLinkToken_(t) {
+  const parts = String(t || '').split('.');
+  if (parts.length !== 2) return '';
+  let body;
+  try { body = Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0] + '==='.slice((parts[0].length + 3) % 4))).getDataAsString(); }
+  catch (_) { return ''; }
+  const sig = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, linkSecret_())).replace(/=+$/, '').slice(0, 22);
+  if (sig !== parts[1]) return '';
+  const m = body.match(/^(U[0-9a-f]{32}|U[A-Za-z0-9_]+)\.(\d+)$/);
+  if (!m || Number(m[2]) < Date.now() / 1000) return '';
+  return m[1];
+}
+
+/** 彈窗 userId → 客人帳號的 userId；回傳 '' 代表需要從聊天室按鈕打開一次 */
+function resolveLiffUser_(sub, t) {
+  const rows = readRows_(SHEETS.CUST);
+  for (let i = 0; i < rows.length; i++) if (rows[i]['LINE userId'] === sub) return sub;       // 同一個服務提供者
+  for (let i = 0; i < rows.length; i++) if (rows[i]['彈窗 userId'] === sub) return rows[i]['LINE userId'];
+  const uid = readLinkToken_(t);
+  if (!uid) return '';
+  return withLock_(function () {
+    const found = findRow_(SHEETS.CUST, 'LINE userId', uid);
+    if (!found) return '';
+    const cur = found.data['彈窗 userId'];
+    if (cur && cur !== sub) throw new Error('這個按鈕屬於另一個 LINE 帳號，請從您自己和小魏的聊天室打開。');
+    if (!cur) setCells_(SHEETS.CUST, found.row, { '彈窗 userId': sub });
+    return uid;
+  });
 }
 
 /** 文字訊息＋快速按鈕（打開彈窗） */
-function linkText_(text, buttons) {
+function linkText_(text, buttons, uid) {
   const items = buttons.map(function (b) {
-    const url = liffUrl_(b[1], b[2]);
+    const url = liffUrl_(b[1], b[2], uid);
     return url ? { type: 'action', action: { type: 'uri', label: b[0].slice(0, 20), uri: url } } : null;
   }).filter(Boolean);
   const msg = { type: 'text', text: text };
@@ -371,8 +420,8 @@ function linkText_(text, buttons) {
   return msg;
 }
 
-function menuText_(text) {
-  return linkText_(text, [['🏨 我要訂房', 'room'], ['🚗 我要訂車', 'car'], ['📋 我的預約', 'my']]);
+function menuText_(text, uid) {
+  return linkText_(text, [['🏨 我要訂房', 'room'], ['🚗 我要訂車', 'car'], ['📋 我的預約', 'my']], uid);
 }
 
 /* ----- 推給客人的簡短通知（取代原本的大卡片） ----- */
@@ -386,7 +435,7 @@ function roomNotice_(b, mode) {
   } else {
     t = '很抱歉，您 ' + fmtYmd_(b.ci) + ' 入住的訂房需求（' + b.id + '）目前無法安排，小魏會再與您聯繫。';
   }
-  return linkText_(t, [['📋 查看我的預約', 'my', b.id]]);
+  return linkText_(t, [['📋 查看我的預約', 'my', b.id]], b.uid);
 }
 
 function carNotice_(c, mode) {
@@ -398,7 +447,7 @@ function carNotice_(c, mode) {
   } else {
     t = '很抱歉，您 ' + c.flight + ' 的' + c.type + '需求（' + c.id + '）目前無法安排，小魏會再與您聯繫。';
   }
-  return linkText_(t, [['📋 查看我的預約', 'my', c.id]]);
+  return linkText_(t, [['📋 查看我的預約', 'my', c.id]], c.uid);
 }
 
 /* ============================================================
@@ -507,7 +556,7 @@ function bindMember_(uid, memberId, staffName) {
   const text = (applied ? '🎉 您的 INSPIRE 會員卡辦好了！' : '✅ 會員卡綁定完成！') +
     '\n\n' + c['中文姓名'] + ' ' + c['英文姓名'] + '\n會員卡號：' + memberId +
     '\n\n現在可以直接在 LINE 裡訂房、訂車了 👇';
-  const res = push_('c', uid, [menuText_(text)]);
+  const res = push_('c', uid, [menuText_(text, uid)]);
   const who = c['中文姓名'] + '（' + memberId + '）';
   if (!res.ok) return { ok: true, msg: '✅ 已綁定 ' + who + '，但通知客人失敗：' + res.error };
   return { ok: true, msg: '✅ 已綁定 ' + who + '，也通知客人了。' + (applied && CFG.TRASH_PASSPORT_AFTER_BIND ? '\n護照照片已刪除。' : '') };
@@ -521,7 +570,7 @@ function rejectReg_(uid, reason, staffName) {
   if (c['登記狀態'] === REG.BOUND) return { ok: false, msg: c['中文姓名'] + ' 已經綁定了。' };
   if (c['證件檔案ID']) trashFile_(c['證件檔案ID']);
   setCells_(SHEETS.CUST, found.row, { '登記狀態': REG.NONE, '證件檔案ID': '', '證件檔案': '', '備註': '退件：' + reason + '（' + staffName + '）' });
-  const res = push_('c', uid, [linkText_('不好意思，' + (reason || '照片看不太清楚') + '，麻煩再上傳一次 🙏', [['📷 重新上傳', 'reg']])]);
+  const res = push_('c', uid, [linkText_('不好意思，' + (reason || '照片看不太清楚') + '，麻煩再上傳一次 🙏', [['📷 重新上傳', 'reg']], uid)]);
   return { ok: true, msg: '已請 ' + (c['中文姓名'] || c['LINE名稱']) + ' 重新上傳' + (res.ok ? '。' : '，但通知失敗：' + res.error) };
 }
 
@@ -581,9 +630,12 @@ function apiReject(key, uid, reason) {
  * ============================================================ */
 
 function handleApi_(body) {
-  let uid;
-  try { uid = verifyIdToken_(body.idToken); }
+  let sub, uid;
+  try { sub = verifyIdToken_(body.idToken); }
   catch (err) { return { ok: false, auth: true, error: err.message }; }
+  try { uid = resolveLiffUser_(sub, body.t); }
+  catch (err) { return { ok: false, error: err.message }; }
+  if (!uid) return { ok: false, needLink: true, error: '請從和小魏的聊天室裡的按鈕打開這個頁面（第一次需要）。' };
 
   const action = String(body.api || '');
   const d = body.data || {};

@@ -261,7 +261,7 @@
     const res = await fetch(CFG.API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // 避免跨網域預檢，Apps Script 才收得到
-      body: JSON.stringify({ api: action, idToken: idToken, data: data || {} }),
+      body: JSON.stringify({ api: action, idToken: idToken, data: data || {}, t: params.get('t') || '' }),
     });
     if (!res.ok) throw new Error('連線失敗（' + res.status + '），請稍後再試。');
     const r = await res.json();
@@ -716,6 +716,19 @@
     try { r = await api('me'); }
     catch (e) { fatal(e.message, true); return; }
     if (!r.ok) {
+      if (r.needLink) {
+        // 第一次使用：請客人從聊天室的按鈕打開，系統才知道是哪位客人
+        center('<div class="icon" style="background:var(--gold-soft);color:var(--gold-text)">💬</div>', '從聊天室打開一次就好',
+          '第一次使用，請從和小魏的聊天室裡點按鈕打開這個頁面。之後從選單打開就可以直接使用了。',
+          inClient() ? `<button class="btn" id="relink">幫我取得按鈕</button>` : `<a class="btn" href="https://line.me/R/ti/p/${encodeURIComponent(CFG.OA_ID || '@inspirekorea')}">打開聊天室</a>`);
+        const b = $('relink');
+        if (b) b.onclick = async () => {
+          b.disabled = true; b.textContent = '處理中…';
+          try { await liff.sendMessages([{ type: 'text', text: '我的預約' }]); } catch (_) {}
+          closeWin();
+        };
+        return;
+      }
       if (r.notFriend) {
         center('<div class="icon" style="background:var(--gold-soft);color:var(--gold-text)">＋</div>', '先加入好友', esc(r.error),
           `<a class="btn" href="https://line.me/R/ti/p/${encodeURIComponent(CFG.OA_ID || '@inspirekorea')}">加入 ${esc(CFG.OA_ID || '@inspirekorea')}</a><button class="btn ghost" onclick="location.reload()">我加好了</button>`);
