@@ -28,12 +28,28 @@ const CFG = {
   TRASH_PASSPORT_AFTER_BIND: true,      // 護照照片只用來代辦會員卡，綁定完成後移到雲端硬碟垃圾桶
   NOTE_ARRIVE: '接機工作人員會舉著 INSPIRE 的牌子等候您',
   ACCOUNT_NAME: '韓國INSPIRE 小魏JOY',
+  // 推播給小幫手的「Room Req / Car Req」文字（可直接複製貼到 Teams）
+  REQ: {
+    TEAM: 'Team China B',
+    BILLING: 'BD Joy 900019',
+    ROOM_POST: 'No',
+    WAIVE_DEPOSIT: 'Yes',
+    CONTACT: 'Joy Wei in Teams\nWhat\u2019s App',
+    REMARK: 'Near Elevator',
+  },
+  // 房型代號：樓 S=輝映 SUN / O=海洋 OCEAN
+  ROOM_CODES: {
+    '豪華大床房': 'DNK', '豪華雙床房': 'DNT',
+    '輝映套房特大床': 'SNK', '輝映套房雙床': 'SNT', '海洋套房特大床': 'SNK', '海洋套房雙床': 'SNT',
+    '單間套房特大床': 'SSK',
+    '迎仕柏套房特大床': 'SIK', '迎仕柏套房雙床': 'SIT',
+  },
 };
 
 const SHEETS = { CUST: '客人', ROOM: '訂房', CAR: '訂車', STAFF: '使用者', LOG: '紀錄', EVENT: '活動' };
 const HEADERS = {
   '客人': ['LINE userId', 'LINE名稱', '會員ID', '中文姓名', '英文姓名', '狀態', '加入時間', '最後訊息', '備註',
-          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId'],
+          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId', 'Casino Tier'],
   '訂房': ['編號', '狀態', '訂房代號', '會員ID', '中文姓名', '英文姓名', '樓', '房型', '入住日期', '退房日期', '晚數', '人數',
            '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
@@ -103,6 +119,7 @@ function 初始化() { setupSheets(); }
 function 測試連線() { testLine(); }
 function 新增使用者_小魏() { addStaffNamed_('小魏'); }
 function 新增使用者_助理() { addStaffNamed_('助理'); }
+function 新增使用者_公務機() { addStaffNamed_('公務機'); }
 function 查看填單連結() { listStaffLinks(); }
 
 function setupSheets() {
@@ -875,9 +892,10 @@ function notifyStaff_(kind, item, cust) {
   const staff = readRows_(SHEETS.STAFF).filter(function (s) { return isOn_(s['啟用']) && s['小幫手 userId']; });
   if (!staff.length) { log_('小幫手', '沒有綁定任何使用者，' + item.id + ' 沒有通知到人'); return; }
   const msg = kind === 'room' ? staffRoomFlex_(item, cust) : staffCarFlex_(item, cust);
+  const req = text_(kind === 'room' ? roomReqText_(item, cust) : carReqText_(item, cust));
   const ids = [];
   staff.forEach(function (s) {
-    const res = push_('h', s['小幫手 userId'], [msg]);
+    const res = push_('h', s['小幫手 userId'], [msg, req]);
     if (res.ok && res.ids) ids.push.apply(ids, res.ids);
     if (!res.ok) log_('小幫手通知失敗', s['名稱'] + '：' + res.error);
   });
@@ -1393,6 +1411,54 @@ function staffCarBubble_(c, cust) {
       { type: 'text', text: '也可以長按這則訊息回覆「已經訂好了」', size: 'xxs', color: C.mute, align: 'center', margin: 'sm' },
     ] },
   };
+}
+
+/* ----- 給小幫手的 Room Req / Car Req 文字（格式照 Teams 貼文） ----- */
+function towerCode_(tower) { return /海洋|OCEAN/i.test(tower) ? 'OCEAN' : 'SUN'; }
+function roomCode_(tower, room) {
+  const c = CFG.ROOM_CODES[room];
+  return c ? (towerCode_(tower) === 'OCEAN' ? 'O' : 'S') + c : room;
+}
+/** 2026-12-30 → 2026/12/30；2027-01-04 → 2027/1/4 */
+function reqDate_(ymd) {
+  const p = ymdParts_(ymd);
+  return p.length === 3 && p[0] ? p[0] + '/' + Number(p[1]) + '/' + Number(p[2]) : String(ymd || '');
+}
+function reqDT_(dt) { return dt ? reqDate_(String(dt).slice(0, 10)) + ' ' + String(dt).slice(11, 16) : '-'; }
+function patronOf_(x, cust) {
+  return { name: x.nameEn || (cust && cust['英文姓名']) || x.nameZh || '-', mmid: x.memberId || (cust && cust['會員ID']) || '-',
+    tier: (cust && cust['Casino Tier']) || '' };
+}
+function roomReqText_(b, cust) {
+  const p = patronOf_(b, cust), R = CFG.REQ;
+  return ['Room Req', R.TEAM,
+    'Patron : ' + p.name,
+    'Patron MMID : ' + p.mmid,
+    'Check- IN : ' + reqDate_(b.ci),
+    'Check- OUT : ' + reqDate_(b.co),
+    'Hotel Tower : ' + towerCode_(b.tower),
+    'Room Type : ' + roomCode_(b.tower, b.room),
+    'Billing : ' + R.BILLING,
+    'Casino Tier : ' + p.tier,
+    'Room Post : ' + R.ROOM_POST,
+    'Waive Deposit : ' + R.WAIVE_DEPOSIT,
+    'Contact Host : ' + R.CONTACT,
+    'Special Request : ' + R.REMARK].join('\n');
+}
+function carReqText_(c, cust) {
+  const p = patronOf_(c, cust), R = CFG.REQ, dep = c.type === '送機';
+  return [dep ? 'Car Req (Drop-off)' : 'Car Req (Pick-up)', R.TEAM,
+    'Patron : ' + p.name,
+    'Patron MMID : ' + p.mmid,
+    'Flight : ' + (c.flight || '-'),
+    (dep ? 'Departure : ' : 'Arrival : ') + reqDT_(c.ftime),
+    dep ? 'Pick-up Time : ' + reqDT_(c.pickup) : null,
+    'Pick-up Point : ' + (dep ? 'VIP LOBBY' : 'Airport (INSPIRE sign)'),
+    'Pax : ' + (c.pax || 1),
+    'Billing : ' + R.BILLING,
+    'Casino Tier : ' + p.tier,
+    'Contact Host : ' + R.CONTACT,
+    'Special Request : ' + (c.note || '-')].filter(function (x) { return x !== null; }).join('\n');
 }
 
 function staffRoomFlex_(b, cust) {
