@@ -27,6 +27,7 @@ const CFG = {
   NOTE_DEPART: '上車地點一律為 VIP LOBBY',
   TRASH_PASSPORT_AFTER_BIND: true,      // 護照照片只用來代辦會員卡，綁定完成後移到雲端硬碟垃圾桶
   NOTE_ARRIVE: '接機工作人員會舉著 INSPIRE 的牌子等候您',
+  NOTE_VOIDED: '此筆訂單已取消，若非您本人申請，請聯繫公關小魏。',   // 已確認的訂單被取消時通知客人
   ACCOUNT_NAME: '韓國INSPIRE 小魏JOY',
   // 推播給小幫手的「Room Req / Car Req」文字（可直接複製貼到 Teams）
   REQ: {
@@ -54,7 +55,7 @@ const HEADERS = {
   '訂房': ['編號', '狀態', '訂房代號', '會員ID', '中文姓名', '英文姓名', '樓', '房型', '入住日期', '退房日期', '晚數', '人數',
            '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
-           '來源', '處理人', '建立時間', '安排時間', 'LINE userId', '通知訊息ID', '備註'],
+           '來源', '處理人', '建立時間', '安排時間', 'LINE userId', '通知訊息ID', '備註', '訂車代號'],
   '使用者': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId'],
   '紀錄': ['時間', '來源', '內容'],
   '活動': ['顯示', '排序', '標題', '說明', '海報網址', '連結', '更新時間'],
@@ -533,6 +534,10 @@ function roomNotice_(b, mode) {
     t = '✅ 訂房確認\n\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room +
       '\n入住日期：' + fmtYmd_(b.ci) + ' ' + CFG.CHECKIN_TIME + '\n退房日期：' + fmtYmd_(b.co) + ' ' + CFG.CHECKOUT_TIME +
       '\n訂房代號：' + b.code;
+  } else if (mode === 'voided') {
+    t = '❌ 訂房已取消\n\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room +
+      '\n入住日期：' + fmtYmd_(b.ci) + ' ' + CFG.CHECKIN_TIME + '\n退房日期：' + fmtYmd_(b.co) + ' ' + CFG.CHECKOUT_TIME +
+      (b.code ? '\n訂房代號：' + b.code : '') + '\n\n' + CFG.NOTE_VOIDED;
   } else {
     t = '很抱歉，您 ' + fmtYmd_(b.ci) + ' 入住的訂房需求（' + b.id + '）目前無法安排，小魏會再與您聯繫。';
   }
@@ -544,7 +549,10 @@ function carNotice_(c, mode) {
   if (mode === 'arranged') {
     t = '✅ ' + c.type + '已安排好\n\n航班：' + c.flight + '\n' + (c.type === '接機' ? '抵達：' : '起飛：') + fmtDT_(c.ftime) +
       (c.type === '送機' ? '\n上車：' + fmtDT_(c.pickup) + '\n📍 ' + CFG.NOTE_DEPART : '\n🪧 ' + CFG.NOTE_ARRIVE) +
-      '\n上車人數：' + c.pax + ' 位';
+      '\n上車人數：' + c.pax + ' 位' + (c.code ? '\n訂車代號：' + c.code : '');
+  } else if (mode === 'voided') {
+    t = '❌ ' + c.type + '已取消\n\n航班：' + c.flight + '\n' + (c.type === '接機' ? '抵達：' : '起飛：') + fmtDT_(c.ftime) +
+      (c.type === '送機' ? '\n上車：' + fmtDT_(c.pickup) : '') + (c.code ? '\n訂車代號：' + c.code : '') + '\n\n' + CFG.NOTE_VOIDED;
   } else {
     t = '很抱歉，您 ' + c.flight + ' 的' + c.type + '需求（' + c.id + '）目前無法安排，小魏會再與您聯繫。';
   }
@@ -848,7 +856,7 @@ function publicCar_(r) {
   return {
     kind: 'car', id: r['編號'], status: st === ST.FAILED ? ST.CAR_OK : st, type: r['類型'],
     nameZh: r['中文姓名'], nameEn: r['英文姓名'], flight: r['航班'], ftime: r['航班時間'], pickup: r['上車時間'],
-    pax: parseInt(r['人數'], 10) || 1, created: r['建立時間'],
+    pax: parseInt(r['人數'], 10) || 1, created: r['建立時間'], code: st === ST.CANCELLED ? '' : (r['訂車代號'] || ''),
   };
 }
 
@@ -1037,7 +1045,16 @@ function handleHelper_(ev) {
       return;
     }
     if (pb.a === 'codeok') { reply([text_(confirmRoom_(pb.id, pb.code, staff.name).msg)]); return; }
-    if (pb.a === 'carok') { reply([text_(arrangeCar_(pb.id, staff.name).msg)]); return; }
+    if (pb.a === 'carok') {
+      const r = findRow_(SHEETS.CAR, '編號', pb.id);
+      if (!r) { reply([text_('找不到 ' + pb.id)]); return; }
+      if (r.data['狀態'] !== ST.CAR_PENDING) { reply([text_(pb.id + ' 已經是「' + r.data['狀態'] + '」' + (r.data['處理人'] ? '（' + r.data['處理人'] + '）' : '') + '。要補訂車代號請傳「' + pb.id + ' 代號」。')]); return; }
+      saveState_('h', uid, { await: 'carcode', id: pb.id });
+      reply([qrText_('請輸入 ' + pb.id + '（' + r.data['中文姓名'] + '）的訂車代號。\n同事還沒給代號的話，按「沒有代號，直接通知」，之後再傳「' + pb.id + ' 代號」補上。',
+        [['沒有代號，直接通知', 'a=carnocode&id=' + pb.id], ['先不要', 'a=noop']])]);
+      return;
+    }
+    if (pb.a === 'carnocode') { clearState_('h', uid); reply([text_(arrangeCar_(pb.id, staff.name, '').msg)]); return; }
     if (pb.a === 'cancel') {
       reply([qrText_('確定 ' + pb.id + ' 無法安排嗎？會通知客人「小魏會再與您聯繫」。', [
         ['確定，通知客人', 'a=cancelok&id=' + pb.id], ['不要取消', 'a=noop'],
@@ -1126,6 +1143,12 @@ function handleHelper_(ev) {
     reply([text_(bindMember_(hst.u, txt, staff.name).msg)]);
     return;
   }
+  if (hst && hst.await === 'carcode') {
+    clearState_('h', uid);
+    if (CANCEL_WORDS.test(txt)) { reply([text_('好的，沒有變更。')]); return; }
+    reply([text_(arrangeCar_(hst.id, staff.name, OK_WORDS.test(txt) ? '' : txt).msg)]);
+    return;
+  }
   if (hst && hst.await === 'code') {
     clearState_('h', uid);
     if (CANCEL_WORDS.test(txt)) { reply([text_('好的，沒有變更。')]); return; }
@@ -1159,7 +1182,7 @@ function handleStaffAnswer_(kind, id, txt, staffName) {
     if (OK_WORDS.test(txt)) return '請回覆 ' + id + ' 的訂房代號（例如：' + id + ' INS2611-0502）。';
     return confirmRoom_(id, txt, staffName).msg;
   }
-  return arrangeCar_(id, staffName).msg;
+  return arrangeCar_(id, staffName, OK_WORDS.test(txt) ? '' : txt).msg;   // 回覆代號＝安排好並附上代號；回「已經訂好了」＝不填代號
 }
 
 function pendingList_(withHelp) {
@@ -1228,16 +1251,26 @@ function confirmRoom_(id, code, staffName) {
   return { ok: true, msg: '✅ 已把訂房代號 ' + code + ' 傳給 ' + b.nameZh + '（' + id + '，' + fmtMD_(b.ci) + ' 入住）。' };
 }
 
-function arrangeCar_(id, staffName) {
-  let c, row;
+function arrangeCar_(id, staffName, code) {
+  code = String(code || '').trim();
+  if (code.length > 40 || /\n/.test(code)) return { ok: false, msg: '訂車代號太長了，請確認。' };
+  let c, row, mode = 'new';
   const err = withLock_(function () {
     const found = findRow_(SHEETS.CAR, '編號', id);
     if (!found) return '找不到 ' + id + '。';
     if (found.data['狀態'] === ST.CANCELLED) return id + ' 已經取消了。';
-    if (found.data['狀態'] === ST.CAR_OK) return id + ' 已經由 ' + found.data['處理人'] + ' 安排好了。';
-    setCells_(SHEETS.CAR, found.row, { '狀態': ST.CAR_OK, '處理人': staffName, '安排時間': now_(), '備註': '' });
+    if (found.data['狀態'] === ST.CAR_OK || found.data['狀態'] === ST.FAILED) {
+      // 已安排過：有給代號就補上（再通知客人一次），沒給就不重複處理
+      if (!code) return id + ' 已經由 ' + found.data['處理人'] + ' 安排好了。要補訂車代號請傳「' + id + ' 代號」。';
+      if (code === found.data['訂車代號']) return id + ' 的訂車代號已經是 ' + code + '。';
+      setCells_(SHEETS.CAR, found.row, { '訂車代號': code, '狀態': ST.CAR_OK, '備註': '' });
+      mode = 'code';
+    } else {
+      setCells_(SHEETS.CAR, found.row, { '狀態': ST.CAR_OK, '處理人': staffName, '安排時間': now_(), '備註': '', '訂車代號': code });
+    }
     row = found.row;
     c = rowToCar_(found.data);
+    c.code = code || c.code;
     return '';
   });
   if (err) return { ok: false, msg: err };
@@ -1246,7 +1279,8 @@ function arrangeCar_(id, staffName) {
     setCells_(SHEETS.CAR, row, { '狀態': ST.FAILED, '備註': res.error });
     return { ok: false, msg: '⚠️ 已標記安排好，但通知客人失敗：' + res.error };
   }
-  return { ok: true, msg: '✅ 已通知 ' + c.nameZh + '：' + c.type + '車子安排好了（' + id + '，' + c.flight + '）。' };
+  if (mode === 'code') return { ok: true, msg: '✅ 已補上 ' + id + ' 的訂車代號 ' + code + '，並通知 ' + c.nameZh + '。' };
+  return { ok: true, msg: '✅ 已通知 ' + c.nameZh + '：' + c.type + '車子安排好了（' + id + '，' + c.flight + (code ? '，代號 ' + code : '') + '）。' };
 }
 
 function cancelItem_(kind, id, staffName, notify) {
@@ -1257,7 +1291,9 @@ function cancelItem_(kind, id, staffName, notify) {
   setCells_(sheetName, found.row, { '狀態': ST.CANCELLED, '處理人': staffName, '備註': '由 ' + staffName + ' 於 ' + now_() + ' 取消' });
   if (!notify) return { ok: true, msg: '已取消 ' + id + '（沒有通知客人）。' };
   const item = kind === 'room' ? rowToRoom_(found.data) : rowToCar_(found.data);
-  const msg = kind === 'room' ? roomNotice_(item, 'cancelled') : carNotice_(item, 'cancelled');
+  const wasPending = found.data['狀態'] === ST.ROOM_PENDING || found.data['狀態'] === ST.CAR_PENDING;
+  const mode = wasPending ? 'cancelled' : 'voided';   // 已確認過的 →「此筆訂單已取消，若非您本人申請…」
+  const msg = kind === 'room' ? roomNotice_(item, mode) : carNotice_(item, mode);
   const res = push_('c', item.uid, [msg]);
   if (!res.ok) return { ok: false, msg: '已取消 ' + id + '，但通知客人失敗：' + res.error };
   return { ok: true, msg: '已取消 ' + id + '，並通知了 ' + item.nameZh + '。' };
@@ -1330,9 +1366,9 @@ function apiConfirmRoom(key, id, code) {
   return { ok: r.ok, msg: r.msg, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80), quota: safeQuota_() };
 }
 
-function apiArrangeCar(key, id) {
+function apiArrangeCar(key, id, code) {
   const staff = auth_(key);
-  const r = arrangeCar_(id, staff.name);
+  const r = arrangeCar_(id, staff.name, code);
   return { ok: r.ok, msg: r.msg, cars: listRows_(SHEETS.CAR, rowToCar_, 80), quota: safeQuota_() };
 }
 
@@ -1430,7 +1466,7 @@ function rowToRoom_(r) {
 function rowToCar_(r) {
   return {
     id: r['編號'], status: r['狀態'], type: r['類型'], memberId: r['會員ID'], nameZh: r['中文姓名'], nameEn: r['英文姓名'],
-    flight: r['航班'], ftime: r['航班時間'], pickup: r['上車時間'], pax: parseInt(r['人數'], 10) || 1,
+    flight: r['航班'], ftime: r['航班時間'], pickup: r['上車時間'], pax: parseInt(r['人數'], 10) || 1, code: r['訂車代號'] || '',
     source: r['來源'], staff: r['處理人'], created: r['建立時間'], done: r['安排時間'], uid: r['LINE userId'], note: r['備註'],
   };
 }
@@ -1541,7 +1577,7 @@ function staffCarBubble_(c, cust) {
         action: { type: 'postback', label: '已訂好車，通知客人', data: 'a=carok&id=' + c.id, displayText: c.id + ' 已經訂好了' } },
       { type: 'button', style: 'secondary', height: 'sm',
         action: { type: 'postback', label: '無法安排', data: 'a=cancel&id=' + c.id } },
-      { type: 'text', text: '也可以長按這則訊息回覆「已經訂好了」', size: 'xxs', color: C.mute, align: 'center', margin: 'sm' },
+      { type: 'text', text: '也可以長按這則訊息回覆訂車代號（選填）或「已經訂好了」', size: 'xxs', color: C.mute, align: 'center', margin: 'sm', wrap: true },
     ] },
   };
 }

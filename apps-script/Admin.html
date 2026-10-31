@@ -528,7 +528,7 @@
     const pending = c.status === '待安排';
     const acts = c.status === '已取消' ? '' : `<div class="rec-act">
       ${pending ? `<button class="main" data-act="arrange" data-kind="car" data-id="${esc(c.id)}">已訂好車，通知客人</button>`
-        : `<button data-act="resend" data-kind="car" data-id="${esc(c.id)}">${c.status === '通知失敗' ? '重試發送' : '重新發送'}</button>`}
+        : `${c.code ? '' : `<button data-act="arrange" data-kind="car" data-id="${esc(c.id)}">補上訂車代號</button>`}<button data-act="resend" data-kind="car" data-id="${esc(c.id)}">${c.status === '通知失敗' ? '重試發送' : '重新發送'}</button>`}
       <button class="del" data-act="cancel" data-kind="car" data-id="${esc(c.id)}">${pending ? '無法安排' : '取消'}</button>
     </div>`;
     return `<div class="rec ${pending ? 'pending' : ''}">
@@ -541,6 +541,7 @@
       <div class="rec-info">航班 <b>${esc(c.flight)}</b>・${esc(c.pax)} 位上車<br>
         ${c.type === '接機' ? '抵達' : '起飛'} ${esc(fmtDT(c.ftime))}
         ${c.type === '送機' ? `<br>上車 <b>${esc(fmtDT(c.pickup))}</b>・VIP LOBBY` : ''}</div>
+      ${c.code ? `<div class="rec-code">${esc(c.code)}</div>` : ''}
       <div class="rec-sub">${esc(c.created.slice(5, 16))} 建立${c.staff ? '・' + esc(c.staff) + ' 處理' : ''}</div>
       ${c.note && c.status !== '已取消' ? `<div class="rec-err">${esc(c.note)}</div>` : ''}
       ${acts}
@@ -676,12 +677,18 @@
   }
 
   function confirmArrange(c) {
+    const later = !PENDING.includes(c.status);
     openSheet(`
-      <h2>車子已經訂好了？</h2>
-      <p>${c.id}｜${itemSummary(c, 'car')}<br>客人會收到「${esc(c.type)}已安排好」的通知（使用 1 則訊息額度）。</p>
-      <div class="btns"><button class="btn" id="go">已訂好，通知客人</button><button class="btn ghost" id="back">取消</button></div>`);
+      <h2>${later ? '補上訂車代號' : '車子已經訂好了？'}</h2>
+      <p>${c.id}｜${itemSummary(c, 'car')}<br>${later ? '客人會再收到一次「已安排好」的通知，附上訂車代號' : '客人會收到「' + esc(c.type) + '已安排好」的通知'}（使用 1 則訊息額度）。</p>
+      <label class="f" for="carCode">訂車代號${later ? '' : '（選填）'}</label>
+      <input type="text" id="carCode" placeholder="${later ? '訂車代號' : '同事還沒給可以先空著，之後再補'}" autocomplete="off">
+      <div class="btns"><button class="btn" id="go" ${later ? 'disabled' : ''}>${later ? '補上並通知客人' : '已訂好，通知客人'}</button><button class="btn ghost" id="back">取消</button></div>`);
+    const inp = $('carCode');
+    if (later) inp.oninput = () => $('go').disabled = !inp.value.trim();
+    setTimeout(() => inp.focus(), 50);
     $('back').onclick = closeSheet;
-    $('go').onclick = () => runAction($('go'), 'apiArrangeCar', [c.id]);
+    $('go').onclick = () => runAction($('go'), 'apiArrangeCar', [c.id, inp.value.trim()]);
   }
 
   function confirmResend(x, kind) {
@@ -698,7 +705,7 @@
     openSheet(`
       <h2>${pending ? '無法安排' : '取消'} ${esc(x.id)}？</h2>
       <p>${itemSummary(x, kind)}<br>紀錄會標示為「已取消」，不會刪除。${kind === 'room' && !pending ? '記得也要在飯店系統取消。' : ''}</p>
-      <label class="chk"><input type="checkbox" id="notify" checked> 通知客人「這筆無法安排，小魏會再與您聯繫」</label>
+      <label class="chk"><input type="checkbox" id="notify" checked> 通知客人「${pending ? '這筆無法安排，小魏會再與您聯繫' : '此筆訂單已取消，若非您本人申請，請聯繫公關小魏'}」</label>
       <div class="btns"><button class="btn danger" id="go">確認</button><button class="btn ghost" id="back">返回</button></div>`);
     $('back').onclick = closeSheet;
     $('go').onclick = () => runAction($('go'), 'apiCancel', [kind, x.id, $('notify').checked]);

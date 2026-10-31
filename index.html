@@ -512,6 +512,7 @@
         (off ? '' : dep
           ? `<div class="hi loc"><small>上車地點</small><b>VIP LOBBY</b></div>`
           : `<div class="hi txt"><small>接機方式</small><b>${esc(S.cfg.noteArrive)}</b></div>`) +
+        (x.code ? `<div class="hi"><small>訂車代號</small><b>${esc(x.code)}</b><button class="copy" data-copy="${esc(x.code)}">複製代號</button></div>` : '') +
         (pending ? `<div class="hi wait"><small>狀態</small><b>安排中，小魏安排好車子後會通知您</b></div>` : '');
     }
     return `<div class="bk ${off ? 'off' : ''}" data-id="${esc(x.id)}">
