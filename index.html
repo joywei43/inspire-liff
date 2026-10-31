@@ -107,11 +107,22 @@
   .steps div{flex:1;font-size:12px;padding:8px 4px;border-radius:8px;background:#F1EEF3;color:var(--mute)}
   .steps div.on{background:var(--ok-bg);color:var(--ok);font-weight:700}
   .steps div.now{background:var(--warn-bg);color:var(--warn)}
-  .member-card{border-radius:16px;padding:20px;color:#fff;background:linear-gradient(135deg,#2B1B3D,#4A3366 60%,#8A6F3A);box-shadow:0 8px 20px rgba(43,27,61,.25)}
-  .member-card small{display:block;color:var(--gold);font-size:11px;letter-spacing:.14em;font-weight:700}
-  .member-card b{display:block;font-size:28px;letter-spacing:.08em;margin:18px 0 10px}
-  .member-card span{display:block;font-size:14px;letter-spacing:.06em}
-  .member-card .zh{opacity:.75;font-size:13px}
+  .member-card{position:relative;overflow:hidden;aspect-ratio:1.586;border-radius:16px;padding:22px 24px;color:#fff;display:flex;flex-direction:column;
+    --m1:#5A1414;--m2:#8E2A2A;--m3:#B4504A;
+    background:
+      repeating-conic-gradient(from 0deg at 50% 52%,rgba(255,255,255,.035) 0deg .6deg,rgba(0,0,0,.04) .6deg 1.2deg),
+      conic-gradient(from 20deg at 50% 52%,var(--m1),var(--m3) 40deg,var(--m1) 95deg,var(--m2) 150deg,var(--m1) 200deg,var(--m3) 225deg,var(--m1) 280deg,var(--m2) 330deg,var(--m1));
+    box-shadow:0 10px 24px rgba(60,10,10,.35),inset 0 0 0 1px rgba(255,255,255,.12)}
+  .member-card.black{--m1:#0E0E0F;--m2:#2C2D2F;--m3:#5C5E61;box-shadow:0 10px 24px rgba(0,0,0,.45),inset 0 0 0 1px rgba(255,255,255,.12)}
+  .member-card::after{content:"";position:absolute;inset:-40%;background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.28) 50%,transparent 58%);transform:translateX(-60%);animation:shine 4.5s ease-in-out infinite}
+  @keyframes shine{0%,55%{transform:translateX(-60%)}100%{transform:translateX(60%)}}
+  @media (prefers-reduced-motion:reduce){.member-card::after{animation:none;display:none}}
+  .gold-t{background:linear-gradient(180deg,#F3D99B,#C9A45C 55%,#A8823F);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .member-card .brand-l{font-size:17px;letter-spacing:.16em;font-weight:400}
+  .member-card .brand-l b{font-weight:800}
+  .member-card .tier{font-size:13px;letter-spacing:.06em;margin-top:6px;font-weight:600}
+  .member-card .num{margin-top:auto;font-size:22px;letter-spacing:.12em;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .member-card .nm{font-size:13px;letter-spacing:.06em;opacity:.9}
   .grp{font-size:12px;font-weight:700;color:var(--gold-text);letter-spacing:.08em;margin:4px 0 8px}
   .tiles + .grp{margin-top:16px}
   .pick-hint{font-size:13px;color:var(--mute);background:#F6F4F8;border-radius:10px;padding:14px;text-align:center}
@@ -347,7 +358,12 @@
     if (p.registered) {
       setBar('');
       $('view').innerHTML = `<div class="card">
-        <div class="member-card"><small>INSPIRE MEMBERSHIP</small><b>${esc(p.memberId)}</b><span>${esc(p.nameEn)}</span><span class="zh">${esc(p.nameZh)}</span></div>
+        <div class="member-card ${/black/i.test(p.tier || '') ? 'black' : ''}">
+          <div class="brand-l gold-t"><b>INSPIRE</b> REWARDS</div>
+          <div class="tier gold-t">${esc(String(p.tier || 'Royal').toUpperCase())}</div>
+          <div class="num">${esc(p.memberId)}</div>
+          <div class="nm">${esc(p.nameEn)}　${esc(p.nameZh)}</div>
+        </div>
         <p class="sub" style="margin:14px 0 0">會員卡已綁定這個 LINE 帳號。資料要修改，請直接在聊天室傳訊息給小魏。</p></div>`;
       return;
     }
@@ -750,7 +766,7 @@
       ? { memberId: '', nameZh: '', nameEn: '', registered: false, regStatus: '', docType: '' }
       : params.get('reg') === 'wait'
         ? { memberId: '', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', registered: false, regStatus: '待綁定', docType: '會員卡' }
-        : { memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', registered: true, regStatus: '已綁定', docType: '會員卡' },
+        : { memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tier: params.get('tier') || 'Royal', registered: true, regStatus: '已綁定', docType: '會員卡' },
     rooms: [
       { kind: 'room', id: 'R0001', status: '已確認', code: 'INS2611-0502', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '海洋樓', room: '豪華雙床房', ci: '2026-11-20', co: '2026-11-23', nights: 3, people: 2 },
       { kind: 'room', id: 'R0004', status: '待處理', code: '', memberId: 'A102938', nameZh: '陳志明', nameEn: 'CHEN CHIH MING', tower: '輝映樓', room: '輝映套房特大床', ci: '2026-12-18', co: '2026-12-21', nights: 3, people: 1 },

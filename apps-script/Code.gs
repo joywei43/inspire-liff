@@ -761,6 +761,7 @@ function meResponse_(uid, extra) {
     ok: true,
     profile: {
       memberId: isRegistered_(c) ? c['會員ID'] : '', nameZh: c['中文姓名'], nameEn: c['英文姓名'], registered: isRegistered_(c),
+      tier: c['Casino Tier'] || CFG.REQ.TIER,
       regStatus: c['登記狀態'] || '', docType: c['證件類型'] || '', regAt: c['登記時間'] || '',
       rejected: !c['登記狀態'] && /^退件：/.test(c['備註'] || '') ? c['備註'].replace(/^退件：/, '').replace(/（.*）$/, '') : '',
     },
@@ -962,7 +963,7 @@ function handleHelper_(ev) {
   if (ev.type !== 'message' && ev.type !== 'postback') return;
 
   const txt = ev.type === 'message' && ev.message.type === 'text' ? String(ev.message.text).trim() : '';
-  const bind = txt.match(/^綁定\s*(\d{6})$/);
+  const bind = txt.match(/^綁定\s*(\d{6})$/) || (!staff && txt.match(/^(\d{6})$/));
   if (bind) { reply([text_(bindHelper_(uid, bind[1]))]); return; }
   if (!staff) { reply([text_('你還沒綁定。請傳「綁定 六位數綁定碼」。')]); return; }
 

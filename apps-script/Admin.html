@@ -608,14 +608,15 @@
       <div class="segv" id="accSeg">${Object.keys(ACC).map(k => `<button type="button" data-v="${k}" class="${k === acc ? 'on' : ''}"><b>${ACC[k].label}</b><small>${ACC[k].sub}</small></button>`).join('')}</div>
       <div class="row2">
         <div><label class="f" for="mId">會員ID</label><input type="text" id="mId" class="upper" value="${esc(c.memberId)}" autocomplete="off"></div>
-        <div><label class="f" for="mTier">Casino Tier</label><input type="text" id="mTier" value="${esc(c.tier)}" placeholder="Royal" autocomplete="off"></div>
+        <div><label class="f">Casino Tier</label><div class="seg" id="mTier">${['Royal', 'Royal Black'].map(t => `<button type="button" data-v="${t}" class="${(/black/i.test(c.tier) ? 'Royal Black' : 'Royal') === t ? 'on' : ''}">${t}</button>`).join('')}</div></div>
       </div>
       <label class="f" for="mNote">後台備註（客人看不到）</label>
       <textarea id="mNote" placeholder="例如：喜歡高樓層、不抽菸、生日 3/15">${esc(c.note)}</textarea>
       <div class="btns" style="margin-top:14px"><button class="btn" id="go">儲存</button><button class="btn ghost" id="back">取消</button></div>`);
+    $('mTier').onclick = e => { const b = e.target.closest('button'); if (!b) return; [...$('mTier').children].forEach(x => x.classList.toggle('on', x === b)); };
     $('accSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; acc = b.dataset.v; [...$('accSeg').children].forEach(x => x.classList.toggle('on', x === b)); };
     $('back').onclick = closeSheet;
-    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, memberId: $('mId').value.trim(), tier: $('mTier').value.trim(), note: $('mNote').value }]);
+    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, memberId: $('mId').value.trim(), tier: $('mTier').querySelector('.on').dataset.v, note: $('mNote').value }]);
   }
 
   function renderAll() { renderTodo(); renderRecs(); renderMem(); }
