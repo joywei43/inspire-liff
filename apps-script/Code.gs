@@ -443,19 +443,70 @@ function linkText_(text, buttons, uid) {
   return msg;
 }
 
-/** 選單「最新活動」：回覆活動海報（工作表「活動」裡「顯示」填 Y 的，依「排序」由小到大，最多 4 張） */
+/** 選單「最新活動」：回覆活動海報（工作表「活動」裡「顯示」是 Y 的；有填「排序」的排前面，其餘新的在前；最多 4 張） */
 function eventMessages_(uid) {
+  const rows = activeEvents_().slice(0, 4);
+  if (!rows.length) return [menuText_('目前還沒有新的活動消息，有最新活動小魏會第一時間通知您 😊', uid)];
+  const msgs = rows.map(function (r) {
+    const url = r['海報網址'];
+    return { type: 'image', originalContentUrl: url, previewImageUrl: /lh3\.googleusercontent\.com\/d\//.test(url) ? url + '=w1000' : url };
+  });
+  const lines = rows.filter(function (r) { return r['標題']; }).map(function (r) {
+    return '▪️ ' + r['標題'] + (r['說明'] ? '\n' + r['說明'] : '') + (r['連結'] ? '\n' + r['連結'] : '');
+  });
+  msgs.push(menuText_('🎉 INSPIRE 最新活動\n\n' + (lines.length ? lines.join('\n\n') + '\n\n' : '') + '想參加或需要安排，直接留言給小魏 🙏', uid));
+  return msgs;
+}
+
+function isOnFlag_(v) { return /^(Y|是|TRUE|V|✓|✔)$/i.test(String(v || '').trim()); }
+function activeEvents_() {
   let rows = [];
   try { rows = readRows_(SHEETS.EVENT); } catch (_) {}
-  rows = rows.filter(function (r) { return /^(Y|是|TRUE|V|✓|✔)$/i.test(r['顯示']) && /^https:\/\//.test(r['海報網址']); })
-    .sort(function (a, b) { return (Number(a['排序']) || 99) - (Number(b['排序']) || 99); }).slice(0, 4);
-  if (!rows.length) return [menuText_('目前還沒有新的活動消息，有最新活動小魏會第一時間通知您 😊', uid)];
-  const msgs = rows.map(function (r) { return { type: 'image', originalContentUrl: r['海報網址'], previewImageUrl: r['海報網址'] }; });
-  const lines = rows.map(function (r, i) {
-    return '▪️ ' + (r['標題'] || '活動 ' + (i + 1)) + (r['說明'] ? '\n' + r['說明'] : '') + (r['連結'] ? '\n' + r['連結'] : '');
-  });
-  msgs.push(menuText_('🎉 INSPIRE 最新活動\n\n' + lines.join('\n\n') + '\n\n想參加或需要安排，直接留言給小魏 🙏', uid));
-  return msgs;
+  return rows.filter(function (r) { return isOnFlag_(r['顯示']) && /^https:\/\//.test(r['海報網址']); })
+    .sort(function (a, b) {
+      const na = Number(a['排序']) || 0, nb = Number(b['排序']) || 0;
+      if (na || nb) return (na || 9999) - (nb || 9999);
+      return a['更新時間'] < b['更新時間'] ? 1 : -1;
+    });
+}
+
+/* ----- 在小幫手傳海報 → 自動上架到「最新活動」 ----- */
+function eventFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('EVENT_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (_) {} }
+  const folder = DriveApp.createFolder('INSPIRE 小魏JOY｜最新活動海報（公開）');
+  props.setProperty('EVENT_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+/** 下載小幫手收到的圖片，存到雲端硬碟（知道連結的人可看），在「活動」工作表新增一列並上架；回傳列號 */
+function saveEventPoster_(messageId, staffName) {
+  const res = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/message/' + messageId + '/content',
+    { headers: { Authorization: 'Bearer ' + token_('h') }, muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('海報下載失敗（' + res.getResponseCode() + '），請再傳一次。');
+  const blob = res.getBlob();
+  const ct = String(blob.getContentType() || '').toLowerCase();
+  if (!/^image\/(jpeg|jpg|png)$/.test(ct)) throw new Error('海報請傳 JPG 或 PNG 圖片。');
+  if (blob.getBytes().length > 10 * 1024 * 1024) throw new Error('海報超過 10MB，請壓小一點再傳。');
+  blob.setName('活動海報_' + now_().replace(/[-: ]/g, '') + (ct === 'image/png' ? '.png' : '.jpg'));
+  const f = eventFolder_().createFile(blob);
+  f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const url = 'https://lh3.googleusercontent.com/d/' + f.getId();
+  const row = withLock_(function () { return appendText_(sheet_(SHEETS.EVENT), ['Y', '', '', '', url, '', now_()]); });
+  log_('最新活動', staffName + ' 上架海報（第 ' + (row - 1) + ' 號）');
+  return row;
+}
+
+function eventListText_() {
+  const rows = readRows_(SHEETS.EVENT);
+  if (!rows.length) return '還沒有活動海報。直接在這裡傳海報圖片，就會自動上架到「最新活動」。';
+  const shown = activeEvents_().slice(0, 4).map(function (r) { return r['海報網址']; });
+  return '🎉 活動海報清單\n\n' + rows.map(function (r, i) {
+    const on = isOnFlag_(r['顯示']);
+    return (i + 1) + '. ' + (on ? (shown.indexOf(r['海報網址']) >= 0 ? '✅ 上架中' : '⏸ 上架（超過 4 張，暫不顯示）') : '⛔ 已下架') +
+      '｜' + (r['標題'] || '（沒有名稱）') + '｜' + String(r['更新時間'] || '').slice(5, 10);
+  }).join('\n') + '\n\n客人最多看到 4 張，新的在前。\n傳「下架 1」或「上架 1」切換，傳「改名 1 活動名稱」修改名稱。';
 }
 
 /** 選單「服務介紹」：介紹這個官方帳號能做什麼 */
@@ -681,6 +732,13 @@ function apiSaveMember(key, uid, d) {
     const found = findRow_(SHEETS.CUST, 'LINE userId', uid);
     if (!found) throw new Error('找不到這位客人，請重新整理。');
     const upd = { '可訂房型': access, 'Casino Tier': tier, '後台備註': note };
+    const nameZh = String(d.nameZh || '').trim().slice(0, 30);
+    const nameEn = String(d.nameEn || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    if (nameZh) upd['中文姓名'] = nameZh;
+    if (nameEn) {
+      if (!/^[A-Z][A-Z ,.'-]{1,59}$/.test(nameEn)) throw new Error('英文姓名只能用英文字母。');
+      upd['英文姓名'] = nameEn;
+    }
     if (memberId && memberId !== found.data['會員ID']) {
       if (!/^[A-Z0-9-]{3,30}$/.test(memberId)) throw new Error('會員ID 格式不對。');
       const dup = readRows_(SHEETS.CUST).some(function (r) { return r['會員ID'] === memberId && r['LINE userId'] !== uid; });
@@ -1007,10 +1065,37 @@ function handleHelper_(ev) {
     }
     if (pb.a === 'rejectok') { reply([text_(rejectReg_(pb.u, pb.r, staff.name).msg)]); return; }
     if (pb.a === 'noop') { reply([text_('好的，沒有變更。')]); return; }
+    if (pb.a === 'evskip') { clearState_('h', uid); reply([text_('好的，海報已上架（沒有名稱）。傳「活動清單」可以管理。')]); return; }
+    if (pb.a === 'evlist') { clearState_('h', uid); reply([text_(eventListText_())]); return; }
+    return;
+  }
+
+  // 傳圖片＝上架最新活動海報
+  if (ev.type === 'message' && ev.message.type === 'image') {
+    try {
+      const row = saveEventPoster_(ev.message.id, staff.name);
+      saveState_('h', uid, { await: 'evtitle', row: row });
+      reply([qrText_('🎉 海報已上架到「最新活動」（第 ' + (row - 1) + ' 號）！\n\n請傳這個活動的名稱，例如「12/24 聖誕晚宴」。第二行之後可以寫說明。\n不需要名稱就按「略過」。',
+        [['略過', 'a=evskip'], ['活動清單', 'a=evlist']])]);
+    } catch (err) { reply([text_('⚠ ' + err.message)]); }
     return;
   }
 
   if (!txt) return;
+
+  // 活動海報管理
+  if (/^(活動清單|活動列表|海報清單)$/.test(txt)) { clearState_('h', uid); reply([text_(eventListText_())]); return; }
+  const evm = txt.match(/^(上架|下架)\s*(\d{1,3})$/) || txt.match(/^(改名)\s*(\d{1,3})\s+([\s\S]+)$/);
+  if (evm) {
+    clearState_('h', uid);
+    const n = Number(evm[2]), rows = readRows_(SHEETS.EVENT);
+    if (!(n >= 1 && n <= rows.length)) { reply([text_('找不到第 ' + n + ' 號海報。傳「活動清單」查看編號。')]); return; }
+    const upd = evm[1] === '改名' ? { '標題': evm[3].split('\n')[0].trim().slice(0, 40), '說明': evm[3].split('\n').slice(1).join('\n').trim().slice(0, 300) }
+      : { '顯示': evm[1] === '上架' ? 'Y' : 'N' };
+    setCells_(SHEETS.EVENT, n + 1, upd);
+    reply([text_('✅ 第 ' + n + ' 號已' + (evm[1] === '改名' ? '改名為「' + upd['標題'] + '」' : evm[1]) + '。\n\n' + eventListText_())]);
+    return;
+  }
 
   // 1) 引用（長按回覆）通知訊息
   const quoted = ev.message.quotedMessageId;
@@ -1026,6 +1111,15 @@ function handleHelper_(ev) {
 
   // 3) 剛按了「輸入訂房代號」
   const hst = loadState_('h', uid);
+  if (hst && hst.await === 'evtitle') {
+    clearState_('h', uid);
+    if (!/^(略過|不用|跳過|skip)$/i.test(txt)) {
+      const lines = txt.split('\n');
+      setCells_(SHEETS.EVENT, hst.row, { '標題': lines[0].trim().slice(0, 40), '說明': lines.slice(1).join('\n').trim().slice(0, 300) });
+      reply([text_('✅ 活動名稱：「' + lines[0].trim().slice(0, 40) + '」\n客人點選單「最新活動」就會看到。\n傳「活動清單」可以管理或下架。')]);
+    } else reply([text_('好的，海報已上架（沒有名稱）。')]);
+    return;
+  }
   if (hst && hst.await === 'bind') {
     clearState_('h', uid);
     if (CANCEL_WORDS.test(txt)) { reply([text_('好的，沒有變更。')]); return; }

@@ -604,6 +604,10 @@
     let acc = ACC[c.access] ? c.access : '全部';
     openSheet(`<h2>${registered(c) ? esc(c.nameZh) : esc(c.lineName || '客人')}</h2>
       <p>${esc(c.nameEn)}・LINE ${esc(c.lineName)}</p>
+      <div class="row2">
+        <div><label class="f" for="mZh">中文姓名</label><input type="text" id="mZh" value="${esc(c.nameZh)}" autocomplete="off"></div>
+        <div><label class="f" for="mEn">英文姓名</label><input type="text" id="mEn" class="upper" value="${esc(c.nameEn)}" autocomplete="off" placeholder="CHEN CHIH MING"></div>
+      </div>
       <label class="f">可訂房型</label>
       <div class="segv" id="accSeg">${Object.keys(ACC).map(k => `<button type="button" data-v="${k}" class="${k === acc ? 'on' : ''}"><b>${ACC[k].label}</b><small>${ACC[k].sub}</small></button>`).join('')}</div>
       <div class="row2">
@@ -616,7 +620,7 @@
     $('mTier').onclick = e => { const b = e.target.closest('button'); if (!b) return; [...$('mTier').children].forEach(x => x.classList.toggle('on', x === b)); };
     $('accSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; acc = b.dataset.v; [...$('accSeg').children].forEach(x => x.classList.toggle('on', x === b)); };
     $('back').onclick = closeSheet;
-    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, memberId: $('mId').value.trim(), tier: $('mTier').querySelector('.on').dataset.v, note: $('mNote').value }]);
+    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, nameZh: $('mZh').value.trim(), nameEn: $('mEn').value.trim(), memberId: $('mId').value.trim(), tier: $('mTier').querySelector('.on').dataset.v, note: $('mNote').value }]);
   }
 
   function renderAll() { renderTodo(); renderRecs(); renderMem(); }
