@@ -671,11 +671,12 @@
     $('teamList').innerHTML = (S.team || []).map(t => `
       <div class="rec" style="margin-bottom:8px;${t.on ? '' : 'opacity:.55'}">
         <div class="rec-top"><div><div class="rec-name">${esc(t.name)}<small>${t.role}</small></div>
-          <div class="rec-sub">${t.bound ? '✓ 已綁定小幫手' : '未綁定小幫手（收不到通知）'}${t.on ? '' : '・已停用'}</div></div></div>
-        ${t.role === '助理' ? `<div class="rec-act">
-          <button data-tm="link" data-name="${esc(t.name)}">複製後台網址</button>
+          <div class="rec-sub">${t.bound ? '✓ 已綁定小幫手' : '未綁定小幫手'}・${t.bound && t.notify ? '🔔 收通知' : t.bound ? '🔕 不收通知（可下指令）' : '收不到通知'}${t.on ? '' : '・已停用'}</div></div></div>
+        <div class="rec-act">
+          ${t.role === '助理' ? `<button data-tm="link" data-name="${esc(t.name)}">複製後台網址</button>` : ''}
           <button data-tm="code" data-name="${esc(t.name)}">小幫手綁定碼</button>
-          <button class="del" data-tm="${t.on ? 'off' : 'on'}" data-name="${esc(t.name)}">${t.on ? '停用' : '啟用'}</button></div>` : ''}
+          <button data-tm="${t.notify ? 'mute' : 'unmute'}" data-name="${esc(t.name)}">${t.notify ? '關通知' : '開通知'}</button>
+          ${t.role === '助理' ? `<button class="del" data-tm="${t.on ? 'off' : 'on'}" data-name="${esc(t.name)}">${t.on ? '停用' : '啟用'}</button>` : ''}</div>
       </div>`).join('');
   }
   function showStaffCode(name, code) {
@@ -701,6 +702,7 @@
     try {
       if (b.dataset.tm === 'link') { await navigator.clipboard.writeText(t.link || ''); toast('已複製 ' + name + ' 的後台網址'); }
       else if (b.dataset.tm === 'code') { const r = await call('apiStaffBindCode', name); showStaffCode(name, r.code); }
+      else if (b.dataset.tm === 'mute' || b.dataset.tm === 'unmute') { const r = await call('apiSetStaffNotify', name, b.dataset.tm === 'unmute'); S.team = r.team; renderTeam(); toast(r.msg); }
       else { const r = await call('apiSetStaffOn', name, b.dataset.tm === 'on'); S.team = r.team; renderTeam(); toast(r.msg); }
     } catch (err) { toast(err.message, true); }
   });

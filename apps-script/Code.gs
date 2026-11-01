@@ -56,7 +56,7 @@ const HEADERS = {
            '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
            '來源', '處理人', '建立時間', '安排時間', 'LINE userId', '通知訊息ID', '備註', '訂車代號'],
-  '使用者': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId', '角色'],
+  '使用者': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId', '角色', '通知'],
   '紀錄': ['時間', '來源', '內容'],
   'AGENT': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId', '備註'],
   '活動': ['顯示', '排序', '標題', '說明', '海報網址', '連結', '更新時間'],
@@ -724,7 +724,7 @@ function trashFile_(fileId) {
 }
 
 function notifyStaffReg_(c) {
-  const staff = readRows_(SHEETS.STAFF).filter(function (s) { return isOn_(s['啟用']) && s['小幫手 userId']; });
+  const staff = notifyTargets_();
   if (!staff.length) { log_('小幫手', '沒有綁定任何使用者，' + c['中文姓名'] + ' 的會員登記沒有通知到人'); return; }
   const msg = staffRegFlex_(c);
   const ids = [];
@@ -1154,7 +1154,7 @@ function customerCancel_(uid, id) {
 }
 
 function notifyStaffText_(text) {
-  readRows_(SHEETS.STAFF).filter(function (s) { return isOn_(s['啟用']) && s['小幫手 userId']; }).forEach(function (s) {
+  notifyTargets_().forEach(function (s) {
     const res = push_('h', s['小幫手 userId'], [text_(text)]);
     if (!res.ok) log_('小幫手通知失敗', s['名稱'] + '：' + res.error);
   });
@@ -1218,7 +1218,7 @@ function createCarRequest_(uid, cust, d, source) {
 }
 
 function notifyStaff_(kind, item, cust) {
-  const staff = readRows_(SHEETS.STAFF).filter(function (s) { return isOn_(s['啟用']) && s['小幫手 userId']; });
+  const staff = notifyTargets_();
   if (!staff.length) { log_('小幫手', '沒有綁定任何使用者，' + item.id + ' 沒有通知到人'); return; }
   const msg = kind === 'room' ? staffRoomFlex_(item, cust) : staffCarFlex_(item, cust);
   const req = kind === 'room' ? text_(roomReqText_(item, cust)) : null;   // 訂車不需要 Car Req
@@ -1536,7 +1536,7 @@ function dailyNoonReport() { const t = checkinReport_(todayYmd_()); if (t) pushS
 function dailyCarReminder() { const t = carReminder_(addDays_(todayYmd_(), 1)); if (t) pushStaff_(t); }
 
 function pushStaff_(text) {
-  readRows_(SHEETS.STAFF).filter(function (s) { return isOn_(s['啟用']) && s['小幫手 userId']; }).forEach(function (s) {
+  notifyTargets_().forEach(function (s) {
     const res = push_('h', s['小幫手 userId'], [text_(text)]);
     if (!res.ok) log_('每日提醒', s['名稱'] + '：' + res.error);
   });
@@ -1948,10 +1948,22 @@ function adminAuth_(key) {
   return s;
 }
 
+/** 會收到小幫手推播的成員：啟用、已綁定、「通知」不是「否」（關掉通知的人仍可在小幫手下指令） */
+function notifyTargets_() {
+  return readRows_(SHEETS.STAFF).filter(function (s) { return isOn_(s['啟用']) && s['小幫手 userId'] && s['通知'] !== '否'; });
+}
+function apiSetStaffNotify(key, name, on) {
+  adminAuth_(key);
+  const f = findRow_(SHEETS.STAFF, '名稱', name);
+  if (!f) throw new Error('找不到這位成員。');
+  setCells_(SHEETS.STAFF, f.row, { '通知': on ? '' : '否' });
+  return { ok: true, msg: name + (on ? ' 會收到通知' : ' 不再收到通知（仍可在小幫手下指令）'), team: listStaff_() };
+}
+
 /* ----- 團隊成員（助理）：處理訂單，不能改會員設定、AGENT ----- */
 function listStaff_() {
   return readRows_(SHEETS.STAFF).map(function (r) {
-    return { name: r['名稱'], role: r['角色'] === '助理' ? '助理' : '管理', on: isOn_(r['啟用']), bound: !!r['小幫手 userId'], link: staffLink_(r['金鑰']) };
+    return { name: r['名稱'], role: r['角色'] === '助理' ? '助理' : '管理', on: isOn_(r['啟用']), bound: !!r['小幫手 userId'], notify: r['通知'] !== '否', link: staffLink_(r['金鑰']) };
   });
 }
 function apiAddStaff(key, name) {
