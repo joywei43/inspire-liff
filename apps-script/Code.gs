@@ -647,36 +647,49 @@ function apiBulkAddMembers(key, text, agent) {
   const staff = adminAuth_(key);
   agent = String(agent || '').trim();
   if (agent && !readRows_(SHEETS.AGENT).some(function (a) { return a['名稱'] === agent; })) throw new Error('找不到 AGENT「' + agent + '」。');
+  const res = bulkAddMembers_(text, agent, staff.name);
+  return Object.assign(res, { ok: true, customers: listCustomers_(), agents: listAgents_() });
+}
+
+/** 一次讀、一次寫：幾百筆也很快。已存在的會員只補空白的姓名（不覆蓋）、更新 AGENT／生日 */
+function bulkAddMembers_(text, agent, staffName) {
   const added = [], updated = [], bad = [];
   withLock_(function () {
     const head = HEADERS[SHEETS.CUST], sh = sheet_(SHEETS.CUST);
+    const rows = readRows_(SHEETS.CUST);
+    const idxOf = {};
+    rows.forEach(function (r, i) { if (r['會員ID']) idxOf[r['會員ID']] = i; });
+    const newRows = [], seen = {};
     String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean).forEach(function (line) {
-      const m = line.match(/^([A-Za-z]*\d[A-Za-z0-9-]{2,29})\s*([㐀-鿿豈-﫿]{1,10})?\s*(.*)$/);
+      const m = line.match(/^([A-Za-z]*\d[A-Za-z0-9-]{2,29})\s*([㐀-鿿豈-﫿]{1,10})?\s*(.*)$/);
       if (!m) { bad.push(line); return; }
       let rest = m[3], bd = '';
       const bm = rest.match(/\s*((?:\d{4}[\/.-])?\d{1,2}[\/.-]\d{1,2})\s*$/);
       if (bm) { bd = normBirthday_(bm[1]); if (!bd) { bad.push(line); return; } rest = rest.slice(0, bm.index); }
       const mid = m[1].toUpperCase(), zh = (m[2] || '').trim(), en = normEn_(rest);
       if (en && !/^[A-Z][A-Z '-]{1,59}$/.test(en)) { bad.push(line); return; }
-      const rows = readRows_(SHEETS.CUST);
-      const idx = rows.map(function (r) { return r['會員ID']; }).lastIndexOf(mid);
-      if (idx >= 0) {
-        const r = rows[idx], upd = {};
+      if (seen[mid]) { bad.push(line + '（重複的會員ID，已略過）'); return; }
+      seen[mid] = true;
+      if (idxOf[mid] !== undefined) {
+        const r = rows[idxOf[mid]], upd = {};
         if (agent) upd['AGENT'] = agent;
         if (zh && !r['中文姓名']) upd['中文姓名'] = zh;
         if (en && !r['英文姓名']) upd['英文姓名'] = en;
         if (bd) upd['生日'] = bd;
-        if (Object.keys(upd).length) setCells_(SHEETS.CUST, idx + 2, upd);
-        updated.push(mid + ' ' + (r['中文姓名'] || zh));
+        if (Object.keys(upd).length) { setCells_(SHEETS.CUST, idxOf[mid] + 2, upd); updated.push(mid + ' ' + (r['中文姓名'] || zh || r['英文姓名'] || en)); }
         return;
       }
-      const o = { '會員ID': mid, '中文姓名': zh, '英文姓名': en, '狀態': '未加入', '加入時間': now_(), '登記狀態': REG.PRE, 'AGENT': agent, '綁定人': staff.name, '生日': bd };
-      appendText_(sh, head.map(function (h) { return o[h] || ''; }));
+      const o = { '會員ID': mid, '中文姓名': zh, '英文姓名': en, '狀態': '未加入', '加入時間': now_(), '登記狀態': REG.PRE, 'AGENT': agent, '綁定人': staffName, '生日': bd };
+      newRows.push(head.map(function (h) { return o[h] || ''; }));
       added.push(mid + ' ' + zh + ' ' + en + (bd ? ' 🎂' + birthdayLabel_(bd) : ''));
     });
+    if (newRows.length) {
+      const start = sh.getLastRow() + 1;
+      sh.getRange(start, 1, newRows.length, head.length).setNumberFormat('@').setValues(newRows);
+    }
   });
-  log_('會員管理', staff.name + ' 批次新增 ' + added.length + ' 位' + (agent ? '（AGENT ' + agent + '）' : ''));
-  return { ok: true, added: added, updated: updated, bad: bad, customers: listCustomers_(), agents: listAgents_(),
+  log_('會員管理', staffName + ' 批次新增 ' + added.length + ' 位' + (agent ? '（AGENT ' + agent + '）' : ''));
+  return { added: added, updated: updated, bad: bad,
     msg: '新增 ' + added.length + ' 位' + (updated.length ? '、更新 ' + updated.length + ' 位' : '') + (bad.length ? '、' + bad.length + ' 行看不懂' : '') };
 }
 const DOC = { card: '會員卡', passport: '護照' };
