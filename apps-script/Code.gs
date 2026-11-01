@@ -662,13 +662,15 @@ function bindMember_(uid, memberId, staffName) {
     setCells_(SHEETS.CUST, row, { '證件檔案ID': '', '證件檔案': '（護照照片已於綁定後刪除）' });
   }
   const applied = c['證件類型'] === DOC.passport;
+  const pre = attachPreBookings_(uid, memberId, c);
   const text = (applied ? '🎉 您的 INSPIRE 會員卡辦好了！' : '✅ 會員卡綁定完成！') +
     '\n\n' + c['中文姓名'] + ' ' + c['英文姓名'] + '\n會員卡號：' + memberId +
+    (pre ? '\n\n📋 小魏已經幫您安排好 ' + pre + ' 筆預約，點「我的預約」就能查看。' : '') +
     '\n\n現在可以直接在 LINE 裡訂房、訂車了 👇';
   const res = push_('c', uid, [menuText_(text, uid)]);
   const who = c['中文姓名'] + '（' + memberId + '）';
   if (!res.ok) return { ok: true, msg: '✅ 已綁定 ' + who + '，但通知客人失敗：' + res.error };
-  return { ok: true, msg: '✅ 已綁定 ' + who + '，也通知客人了。' + (applied && CFG.TRASH_PASSPORT_AFTER_BIND ? '\n護照照片已刪除。' : '') };
+  return { ok: true, msg: '✅ 已綁定 ' + who + '，也通知客人了。' + (pre ? '\n已帶入先建立的 ' + pre + ' 筆預約。' : '') + (applied && CFG.TRASH_PASSPORT_AFTER_BIND ? '\n護照照片已刪除。' : '') };
 }
 
 /** 照片不清楚等，請客人重新上傳 */
@@ -754,6 +756,7 @@ function apiSaveMember(key, uid, d) {
       upd['會員ID'] = memberId;
     }
     setCells_(SHEETS.CUST, found.row, upd);
+    if (upd['會員ID'] && found.data['登記狀態'] === REG.BOUND) attachPreBookings_(uid, upd['會員ID'], Object.assign({}, found.data, upd));
     log_('會員管理', staff.name + ' 更新 ' + (found.data['中文姓名'] || found.data['LINE名稱']) + '：' + access + (upd['會員ID'] ? '、會員ID ' + memberId : ''));
     return '已儲存 ' + (found.data['中文姓名'] || found.data['LINE名稱']);
   });
@@ -1122,6 +1125,10 @@ function handleHelper_(ev) {
     if (hit) { clearState_('h', uid); reply([text_(handleStaffAnswer_(hit.kind, hit.id, txt, staff.name))]); return; }
   }
 
+  // 預先建立訂房：「80060456 SSNK 11/27~11/30」（後面可加訂房代號）
+  const pre = parsePreBooking_(txt);
+  if (pre) { clearState_('h', uid); reply([text_(pre.error ? '⚠ ' + pre.error : staffPreBook_(pre, staff.name).msg)]); return; }
+
   // 2) 「R0012 代號」或「C0007 已經訂好了」
   const m = txt.match(/^([RCrc]\d{4,})[\s:：,，]+(.+)$/);
   if (m) { clearState_('h', uid); reply([text_(handleStaffAnswer_(m[1].charAt(0).toUpperCase() === 'R' ? 'room' : 'car', m[1].toUpperCase(), m[2].trim(), staff.name))]); return; }
@@ -1185,12 +1192,104 @@ function handleStaffAnswer_(kind, id, txt, staffName) {
   return arrangeCar_(id, staffName, OK_WORDS.test(txt) ? '' : txt).msg;   // 回覆代號＝安排好並附上代號；回「已經訂好了」＝不填代號
 }
 
+/* ============================================================
+ * 預先建立訂房（客人還沒綁定也可以，綁定時自動帶進「我的預約」）
+ * 格式：會員ID 房型代號 入住~退房 [訂房代號]，例如「80060456 SSNK 11/27~11/30 RCA950」
+ * ============================================================ */
+function codeToRoom_(code) {
+  code = String(code || '').toUpperCase();
+  let hit = null;
+  Object.keys(CFG.ROOMS).forEach(function (t) {
+    CFG.ROOMS[t].forEach(function (r) { if (!hit && roomCode_(t, r) === code) hit = { tower: t, room: r }; });
+  });
+  return hit;
+}
+
+/** 11/27 → 最近一個未來（或 30 天內）的 11/27；也接受 2026/11/27 */
+function mdToYmd_(s, after) {
+  const p = String(s).split(/[\/.]/).map(Number);
+  let y, m, d;
+  if (p.length === 3) { y = p[0]; m = p[1]; d = p[2]; }
+  else {
+    m = p[0]; d = p[1];
+    const base = after || addDays_(todayYmd_(), -30);
+    y = Number(base.slice(0, 4));
+    if (y + '-' + pad2_(m) + '-' + pad2_(d) <= base) y++;
+  }
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return '';
+  const ymd = y + '-' + pad2_(m) + '-' + pad2_(d);
+  return addDays_(ymd, 0) === ymd ? ymd : '';
+}
+
+function parsePreBooking_(txt) {
+  const m = String(txt).trim().match(/^([A-Za-z0-9-]*\d[A-Za-z0-9-]*)\s+([SsOo][A-Za-z]{3})\s+((?:\d{4}[\/.])?\d{1,2}[\/.]\d{1,2})\s*[~～\-–—至到]\s*((?:\d{4}[\/.])?\d{1,2}[\/.]\d{1,2})(?:\s+(\S{2,40}))?$/);
+  if (!m) return null;
+  const memberId = m[1].toUpperCase();
+  if (memberId.length < 4) return null;
+  const rc = codeToRoom_(m[2]);
+  if (!rc) return { error: '看不懂房型代號「' + m[2].toUpperCase() + '」。可用：' + Object.keys(CFG.ROOMS).map(function (t) { return CFG.ROOMS[t].map(function (r) { return roomCode_(t, r); }).join(' '); }).join(' ') };
+  const ci = mdToYmd_(m[3]);
+  const co = ci ? mdToYmd_(m[4], ci) : '';
+  if (!ci || !co) return { error: '日期看不懂，請用「11/27~11/30」這樣的格式。' };
+  const nights = daysBetween_(ci, co);
+  if (nights < 1 || nights > 60) return { error: '入住 ' + fmtYmd_(ci) + '、退房 ' + fmtYmd_(co) + '，日期好像不對，請確認。' };
+  return { memberId: memberId, tower: rc.tower, room: rc.room, roomCode: m[2].toUpperCase(), ci: ci, co: co, nights: nights, code: m[5] || '' };
+}
+
+function staffPreBook_(p, staffName) {
+  const cust = readRows_(SHEETS.CUST).filter(function (x) { return x['會員ID'] === p.memberId && x['登記狀態'] === REG.BOUND; })[0];
+  const uid = cust ? cust['LINE userId'] : '';
+  let id;
+  const err = withLock_(function () {
+    if (p.code) {
+      const dup = readRows_(SHEETS.ROOM).some(function (r) { return r['訂房代號'] === p.code && r['狀態'] !== ST.CANCELLED; });
+      if (dup) return '訂房代號「' + p.code + '」已經存在了。';
+    }
+    id = nextId_('R');
+    appendText_(sheet_(SHEETS.ROOM), [id, p.code ? ST.ROOM_OK : ST.ROOM_PENDING, p.code, p.memberId,
+      cust ? cust['中文姓名'] : '', cust ? cust['英文姓名'] : '', p.tower, p.room, p.ci, p.co, String(p.nights), '',
+      '小幫手：' + staffName, p.code ? staffName : '', now_(), p.code ? now_() : '', uid, '', '']);
+    return '';
+  });
+  if (err) return { ok: false, msg: err };
+  let notice = '';
+  if (uid && p.code) {
+    const found = findRow_(SHEETS.ROOM, '編號', id);
+    const res = push_('c', uid, [roomNotice_(rowToRoom_(found.data), 'confirmed')]);
+    notice = res.ok ? '\n📨 已通知 ' + cust['中文姓名'] : '\n⚠ 通知客人失敗：' + res.error;
+    if (!res.ok) setCells_(SHEETS.ROOM, found.row, { '狀態': ST.FAILED, '備註': res.error });
+  }
+  return { ok: true, msg: '✅ 已建立 ' + id + '\n會員 ' + p.memberId + (cust ? '・' + cust['中文姓名'] : '（還沒綁定 LINE，綁定後客人就會在「我的預約」看到）') +
+    '\n' + p.tower + '・' + p.room + '（' + p.roomCode + '）\n' + fmtYmd_(p.ci) + ' → ' + fmtYmd_(p.co) + '（' + p.nights + ' 晚）' +
+    '\n訂房代號：' + (p.code || '未填，之後傳「' + id + ' 代號」補上') + notice };
+}
+
+/** 綁定會員卡時，把先建立好的訂房、訂車帶到這位客人身上；回傳筆數 */
+function attachPreBookings_(uid, memberId, cust) {
+  let n = 0;
+  [SHEETS.ROOM, SHEETS.CAR].forEach(function (name) {
+    const sh = sheet_(name), head = HEADERS[name], last = sh.getLastRow();
+    if (last < 2) return;
+    const vals = sh.getRange(2, 1, last - 1, head.length).getDisplayValues();
+    vals.forEach(function (v, i) {
+      const r = {}; head.forEach(function (h, j) { r[h] = String(v[j]).trim(); });
+      if (r['會員ID'] !== memberId || r['LINE userId'] || r['狀態'] === ST.CANCELLED) return;
+      const upd = { 'LINE userId': uid };
+      if (!r['中文姓名']) upd['中文姓名'] = cust['中文姓名'] || '';
+      if (!r['英文姓名']) upd['英文姓名'] = cust['英文姓名'] || '';
+      setCells_(name, i + 2, upd);
+      n++;
+    });
+  });
+  return n;
+}
+
 function pendingList_(withHelp) {
   const p = pendingItems_();
   const regs = pendingRegs_();
   const msgs = [];
   if (withHelp) {
-    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・傳「待處理」查看所有待處理'));
+    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・傳「待處理」查看所有待處理'));
   }
   if (!p.rooms.length && !p.cars.length && !regs.length) { msgs.push(text_('目前沒有待處理的事項 👍')); return msgs; }
   const bubbles = regs.map(staffRegBubble_)
@@ -1243,6 +1342,7 @@ function confirmRoom_(id, code, staffName) {
     return '';
   });
   if (err) return { ok: false, msg: err };
+  if (!b.uid) return { ok: true, msg: '✅ 已存下 ' + id + ' 的訂房代號 ' + code + '。會員 ' + b.memberId + ' 還沒綁定 LINE，綁定後就會在「我的預約」看到。' };
   const res = push_('c', b.uid, [roomNotice_(b, 'confirmed')]);
   if (!res.ok) {
     setCells_(SHEETS.ROOM, row, { '狀態': ST.FAILED, '備註': res.error });
@@ -1289,7 +1389,7 @@ function cancelItem_(kind, id, staffName, notify) {
   if (!found) return { ok: false, msg: '找不到 ' + id + '。' };
   if (found.data['狀態'] === ST.CANCELLED) return { ok: false, msg: id + ' 已經取消了。' };
   setCells_(sheetName, found.row, { '狀態': ST.CANCELLED, '處理人': staffName, '備註': '由 ' + staffName + ' 於 ' + now_() + ' 取消' });
-  if (!notify) return { ok: true, msg: '已取消 ' + id + '（沒有通知客人）。' };
+  if (!notify || !found.data['LINE userId']) return { ok: true, msg: '已取消 ' + id + (found.data['LINE userId'] ? '（沒有通知客人）。' : '（客人還沒綁定 LINE，不用通知）。') };
   const item = kind === 'room' ? rowToRoom_(found.data) : rowToCar_(found.data);
   const wasPending = found.data['狀態'] === ST.ROOM_PENDING || found.data['狀態'] === ST.CAR_PENDING;
   const mode = wasPending ? 'cancelled' : 'voided';   // 已確認過的 →「此筆訂單已取消，若非您本人申請…」
@@ -1313,6 +1413,7 @@ function resendItem_(kind, id) {
     msg = carNotice_(rowToCar_(r), 'arranged'); newStatus = ST.CAR_OK;
   }
   if (r['狀態'] === ST.CANCELLED) return { ok: false, msg: '這筆已取消。' };
+  if (!r['LINE userId']) return { ok: false, msg: '會員 ' + r['會員ID'] + ' 還沒綁定 LINE，綁定後會自動帶入。' };
   const res = push_('c', r['LINE userId'], [msg]);
   setCells_(sheetName, found.row, res.ok ? { '狀態': newStatus, '備註': '' } : { '狀態': ST.FAILED, '備註': res.error });
   return { ok: res.ok, msg: res.ok ? '已重新發送 ' + id : res.error };
