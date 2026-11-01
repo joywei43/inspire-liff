@@ -612,7 +612,7 @@ function normEn_(s) { return String(s || '').replace(/[,，.\/]+/g, ' ').replace
 /** 批次預先建立會員：每行「會員ID 中文姓名 英文姓名」，可指定所屬 AGENT */
 /** 後台貼上多筆訂房：每行「會員ID 房型代號 入住~退房 [訂房代號] [備註]」；SHARER 行會併到上一筆的備註 */
 /** 多行貼上：每行一筆「會員ID 房型 日期 代號」；下一行若是英文姓名（例如 WU,HSIAO CHUAN）＝這筆的客人姓名；SHARER 和其他文字記在備註 */
-function preBookBatch_(text, staffName, via) {
+function preBookBatch_(text, staffName, via, silent) {
   const lines = String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
   const done = [], bad = [];
   let pending = null, extra = [];
@@ -627,7 +627,7 @@ function preBookBatch_(text, staffName, via) {
   lines.forEach(function (l) {
     const p = /^SHARER/i.test(l) ? null : parsePreBooking_(l);
     if (p && p.error) { flush(); bad.push(l + '：' + p.error); return; }
-    if (p) { flush(); p.via = via; pending = p; return; }
+    if (p) { flush(); p.via = via; p.silent = !!silent; pending = p; return; }
     if (!pending) { bad.push(l); return; }
     const en = normEn_(l);
     if (!/^SHARER/i.test(l) && !pending.nameEn && !extra.length && /^[A-Z][A-Z '-]{1,59}$/.test(en)) { pending.nameEn = en; return; }
@@ -639,7 +639,7 @@ function preBookBatch_(text, staffName, via) {
 
 function apiPreBookBatch(key, text) {
   const staff = auth_(key);
-  const res = preBookBatch_(text, staff.name, '後台：'), done = res.done, bad = res.bad;
+  const res = preBookBatch_(text, staff.name, '後台：', true), done = res.done, bad = res.bad;
   return { ok: true, msg: '建立 ' + done.length + ' 筆' + (bad.length ? '、' + bad.length + ' 筆有問題' : ''), done: done, bad: bad, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80) };
 }
 
@@ -1526,7 +1526,7 @@ function staffPreBook_(p, staffName) {
   });
   if (err) return { ok: false, msg: err };
   let notice = '';
-  if (uid && p.code) {
+  if (uid && p.code && !p.silent) {
     const found = findRow_(SHEETS.ROOM, '編號', id);
     const res = push_('c', uid, [roomNotice_(rowToRoom_(found.data), 'confirmed')]);
     notice = res.ok ? '\n📨 已通知 ' + bound['中文姓名'] : '\n⚠ 通知客人失敗：' + res.error;
@@ -1918,7 +1918,7 @@ function apiSubmitRoom(key, d) {
         }
       });
       const r = staffPreBook_({ memberId: b.memberId, tower: b.tower, room: b.room, roomCode: roomCode_(b.tower, b.room), ci: b.ci, co: b.co,
-        nights: b.nights, code: b.code, nameEn: b.nameEn, via: '後台：', note: '' }, staff.name);
+        nights: b.nights, code: b.code, nameEn: b.nameEn, via: '後台：', note: '', silent: true }, staff.name);
       return { ok: r.ok, msg: r.ok ? '✅ 已建立 ' + r.id + '（' + b.memberId + ' 還沒加 LINE，綁定後自動出現在「我的預約」）' : r.msg,
         id: r.id, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80), customers: listCustomers_(), quota: safeQuota_() };
     }
@@ -1940,6 +1940,13 @@ function apiSubmitRoom(key, d) {
     if (!found.data['英文姓名']) fill['英文姓名'] = b.nameEn;
     if (Object.keys(fill).length) setCells_(SHEETS.CUST, found.row, fill);
   });
+  if (!b.notify) {   // 只存起來，不傳 LINE；客人查「我的預約」就看得到
+    const f = findRow_(SHEETS.ROOM, '編號', b.id);
+    setCells_(SHEETS.ROOM, f.row, { '狀態': ST.ROOM_OK, '訂房代號': b.code, '處理人': staff.name, '確認時間': now_() });
+    log_('訂房', staff.name + ' 建立 ' + b.id + '（未通知客人）');
+    return { ok: true, msg: '✅ 已建立 ' + b.id + '（沒有通知客人，客人查「我的預約」就看得到；要通知可按「重新發送」）', id: b.id,
+      rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80), quota: safeQuota_() };
+  }
   const r = confirmRoom_(b.id, b.code, staff.name);
   return { ok: r.ok, msg: r.msg, id: b.id, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80), quota: safeQuota_() };
 }
@@ -2015,7 +2022,7 @@ function validateStaffRoom_(d) {
   const b = {
     uid: s(d.uid), code: s(d.code), memberId: s(d.memberId).toUpperCase(), nameZh: s(d.nameZh),
     nameEn: s(d.nameEn).replace(/\s+/g, ' ').toUpperCase(), tower: s(d.tower), room: s(d.room),
-    ci: s(d.ci), co: s(d.co), people: parseInt(d.people, 10),
+    ci: s(d.ci), co: s(d.co), people: parseInt(d.people, 10), notify: d.notify === true,
   };
   if (!/^[A-Z0-9-]{3,30}$/.test(b.memberId)) throw new Error('請填寫會員ID。');
   if (!/^[A-Z][A-Z ,.'-]{1,59}$/.test(b.nameEn)) throw new Error('請填寫英文姓名（英文字母）。');

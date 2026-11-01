@@ -214,6 +214,7 @@
 
       <label class="f req" for="code">訂房代號</label>
       <input type="text" id="code" autocomplete="off" placeholder="飯店給的訂房確認號碼">
+      <label class="chk" style="margin:14px 0 0"><input type="checkbox" id="notifyNow"> 同時傳 LINE 通知客人（不勾＝只存起來，客人查「我的預約」就看得到）</label>
     </div>
 
     <div class="card">
@@ -404,6 +405,7 @@
       nameEn: $('nameEn').value.trim().replace(/\s+/g, ' ').toUpperCase(),
       tower: S.tower, room: S.room, ci: $('ci').value, co: $('co').value, people: S.people,
       code: $('code').value.trim(),
+      notify: $('notifyNow').checked,
     };
   }
   function problems(d) {
@@ -429,7 +431,8 @@
     if (over) $('nights').textContent += `${$('nights').textContent ? '　' : ''}⚠ 這位客人設定為「${ACC[S.picked.access].label}」，確定要幫他訂這個房型？`;
     $('submit').disabled = p.length > 0 || S.busy;
     const noLine = !d.uid || /^M:/.test(d.uid);
-    $('submit').textContent = S.busy ? '傳送中…' : (p.length ? `還缺：${p.slice(0, 3).join('、')}${p.length > 3 ? '…' : ''}` : noLine ? '建立訂房（客人還沒加 LINE）' : '確認並傳送給客人');
+    const silent = noLine || !d.notify;
+    $('submit').textContent = S.busy ? '傳送中…' : (p.length ? `還缺：${p.slice(0, 3).join('、')}${p.length > 3 ? '…' : ''}` : noLine ? '建立訂房（客人還沒加 LINE）' : silent ? '建立訂房（不通知客人）' : '確認並傳送給客人');
   }
 
   /* 客人在聊天室收到的簡短通知（按下方按鈕打開彈窗看完整資料） */
@@ -466,6 +469,7 @@
   function resetForm() {
     S.picked = null; S.tower = ''; S.room = ''; S.people = 0;
     ['memberId', 'nameZh', 'nameEn', 'ci', 'co', 'code', 'custQ'].forEach(id => $(id).value = '');
+    $('notifyNow').checked = false;
     [$('tower'), $('people')].forEach(el => [...el.children].forEach(c => c.classList.remove('on')));
     roomSeg();
     $('custPicked').style.display = 'none'; $('custSearch').style.display = '';
@@ -481,8 +485,8 @@
     const d = formData();
     const n = daysBetween(d.ci, d.co);
     openSheet(`
-      <h2>${!d.uid || /^M:/.test(d.uid) ? '確認建立？' : '確認傳送？'}</h2>
-      <p>${!d.uid || /^M:/.test(d.uid) ? '這位客人還沒加 LINE，不會傳訊息；他綁定會員卡後，這筆會自動出現在「我的預約」。客人資料會一起存起來，下次輸入會員ID 就自動帶入。' : '送出後，客人會立刻在 LINE 收到訂房確認卡（使用 1 則訊息額度）。'}</p>
+      <h2>${!d.uid || /^M:/.test(d.uid) || !d.notify ? '確認建立？' : '確認傳送？'}</h2>
+      <p>${!d.uid || /^M:/.test(d.uid) ? '這位客人還沒加 LINE，不會傳訊息；他綁定會員卡後，這筆會自動出現在「我的預約」。客人資料會一起存起來，下次輸入會員ID 就自動帶入。' : !d.notify ? '不會傳訊息給客人，客人打開「我的預約」就看得到這筆。之後想通知，可以在「所有紀錄」按「重新發送」。' : '送出後，客人會立刻在 LINE 收到訂房確認卡（使用 1 則訊息額度）。'}</p>
       <div class="sum">
         <div><span>會員ID</span>${esc(d.memberId)}</div>
         <div><span>客人姓名</span>${esc(d.nameZh)}　${esc(d.nameEn)}</div>
@@ -493,7 +497,7 @@
         <div><span>訂房代號</span><b>${esc(d.code)}</b></div>
       </div>
       <div class="btns">
-        <button class="btn" id="go">確認傳送</button>
+        <button class="btn" id="go">${!d.uid || /^M:/.test(d.uid) || !d.notify ? '確認建立' : '確認傳送'}</button>
         <button class="btn ghost" id="back">返回修改</button>
       </div>`);
     $('back').onclick = closeSheet;
@@ -998,6 +1002,7 @@
   $('custReload').onclick = () => load(true);
   ['memberId', 'nameZh', 'nameEn', 'code'].forEach(id => $(id).addEventListener('input', () => { $('formErr').classList.remove('on'); update(); }));
   $('memberId').addEventListener('input', autoFillById);
+  $('notifyNow').addEventListener('change', update);
   $('ci').addEventListener('change', () => {
     const ci = $('ci').value;
     if (ci) {
