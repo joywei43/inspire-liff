@@ -609,13 +609,14 @@
       <div class="rec" data-mem="${esc(c.uid)}" style="cursor:pointer">
         <div class="rec-top">
           <div><div class="rec-name">${registered(c) || c.pre ? esc(c.nameZh) : esc(c.lineName || '(未命名)')}<small>${esc(c.nameEn)}</small>${accTag(c)}</div>
-            <div class="rec-sub">${registered(c) ? '會員 ' + esc(c.memberId) : esc(custSub(c))}${c.pre ? '' : '・LINE ' + esc(c.lineName)}${c.tier ? '・' + esc(c.tier) : ''}${c.agent ? '・AGENT ' + esc(c.agent) : ''}</div></div>
+            <div class="rec-sub">${registered(c) ? '會員 ' + esc(c.memberId) : esc(custSub(c))}${c.pre ? '' : '・LINE ' + esc(c.lineName)}${c.tier ? '・' + esc(c.tier) : ''}${c.agent ? '・AGENT ' + esc(c.agent) : ''}${c.birthday ? '・🎂 ' + esc(bdLabel(c.birthday)) : ''}</div></div>
           <span class="badge">${c.status === '已封鎖' ? '已封鎖' : isAdmin() ? '編輯' : '查看'}</span>
         </div>
         ${c.note ? `<div class="mnote">📝 ${esc(c.note)}</div>` : ''}
       </div>`).join('')
       : `<div class="empty">${S.customers.length ? '找不到符合的客人' : '還沒有客人資料'}</div>`;
   }
+  function bdLabel(bd) { const p = String(bd).split('-').map(Number); return p.length === 3 ? p[0] + '/' + p[1] + '/' + p[2] : p[0] + '/' + p[1]; }
   function editMember(uid) {
     const c = S.customers.find(x => x.uid === uid); if (!c) return;
     if (!isAdmin()) {
@@ -625,6 +626,7 @@
           <div><span>可訂房型</span>${esc((ACC[c.access] || ACC['豪華客房']).label)}</div>
           <div><span>Casino Tier</span>${esc(c.tier || 'Royal')}</div>
           <div><span>所屬 AGENT</span>${esc(c.agent || '-')}</div>
+          <div><span>生日</span>${esc(c.birthday ? bdLabel(c.birthday) : '-')}</div>
         </div>
         ${c.note ? `<div class="mnote">📝 ${esc(c.note)}</div>` : ''}
         <p class="hint">會員設定只有小魏可以修改。</p>
@@ -645,17 +647,19 @@
         <div><label class="f" for="mId">會員ID</label><input type="text" id="mId" class="upper" value="${esc(c.memberId)}" autocomplete="off"></div>
         <div><label class="f">Casino Tier</label><div class="seg" id="mTier">${['Royal', 'Royal Black'].map(t => `<button type="button" data-v="${t}" class="${(/black/i.test(c.tier) ? 'Royal Black' : 'Royal') === t ? 'on' : ''}">${t}</button>`).join('')}</div></div>
       </div>
+      <label class="f" for="mBd">生日（生日前一個月小幫手會提醒）</label>
+      <input type="text" id="mBd" value="${esc(c.birthday ? bdLabel(c.birthday) : '')}" autocomplete="off" inputmode="numeric" placeholder="1985/3/15，不知道年份就填 3/15">
       <label class="f" for="mAgent">所屬 AGENT</label>
       <select id="mAgent" style="width:100%;height:46px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:#fff">
         <option value="">（沒有）</option>${(S.agents || []).map(a => `<option value="${esc(a.name)}" ${a.name === c.agent ? 'selected' : ''}>${esc(a.name)}${a.on ? '' : '（已停用）'}</option>`).join('')}
       </select>
       <label class="f" for="mNote">後台備註（客人看不到）</label>
-      <textarea id="mNote" placeholder="例如：喜歡高樓層、不抽菸、生日 3/15">${esc(c.note)}</textarea>
+      <textarea id="mNote" placeholder="例如：喜歡高樓層、不抽菸">${esc(c.note)}</textarea>
       <div class="btns" style="margin-top:14px"><button class="btn" id="go">儲存</button><button class="btn ghost" id="back">取消</button></div>`);
     $('mTier').onclick = e => { const b = e.target.closest('button'); if (!b) return; [...$('mTier').children].forEach(x => x.classList.toggle('on', x === b)); };
     $('accSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; acc = b.dataset.v; [...$('accSeg').children].forEach(x => x.classList.toggle('on', x === b)); };
     $('back').onclick = closeSheet;
-    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, nameZh: $('mZh').value.trim(), nameEn: $('mEn').value.trim(), memberId: $('mId').value.trim(), tier: $('mTier').querySelector('.on').dataset.v, note: $('mNote').value, agent: $('mAgent').value }]);
+    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, nameZh: $('mZh').value.trim(), nameEn: $('mEn').value.trim(), memberId: $('mId').value.trim(), tier: $('mTier').querySelector('.on').dataset.v, note: $('mNote').value, agent: $('mAgent').value, birthday: $('mBd').value.trim() }]);
   }
 
   /* ---------- 角色與團隊 ---------- */
@@ -735,8 +739,8 @@
   }
   $('bulkBtn').onclick = () => {
     openSheet(`<h2>批次新增會員</h2>
-      <p>一行一位：會員ID 中文姓名 英文姓名。英文大小寫、逗號會自動整理成護照格式（LIN SHENG LI）。<br>客人之後加 LINE、綁定同一個會員ID 時，資料會自動併過去。</p>
-      <textarea id="bulkTxt" style="min-height:180px" placeholder="80040407 林勝利 lin,sheng li&#10;80040404 陳婉欣 chen,wan hsin"></textarea>
+      <p>一行一位：會員ID 中文姓名 英文姓名（最後可以加生日 1985/3/15）。英文大小寫、逗號會自動整理成護照格式（LIN SHENG LI）。<br>客人之後加 LINE、綁定同一個會員ID 時，資料會自動併過去。</p>
+      <textarea id="bulkTxt" style="min-height:180px" placeholder="80040407 林勝利 lin,sheng li 1978/5/20&#10;80040404 陳婉欣 chen,wan hsin"></textarea>
       <label class="f" for="bulkAg">所屬 AGENT</label>
       <select id="bulkAg" style="width:100%;height:46px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:#fff">
         <option value="">（沒有）</option>${(S.agents || []).filter(a => a.on).map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('')}

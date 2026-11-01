@@ -51,7 +51,7 @@ const CFG = {
 const SHEETS = { CUST: '客人', ROOM: '訂房', CAR: '訂車', STAFF: '使用者', LOG: '紀錄', EVENT: '活動', AGENT: 'AGENT' };
 const HEADERS = {
   '客人': ['LINE userId', 'LINE名稱', '會員ID', '中文姓名', '英文姓名', '狀態', '加入時間', '最後訊息', '備註',
-          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId', 'Casino Tier', '可訂房型', '後台備註', 'AGENT'],
+          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId', 'Casino Tier', '可訂房型', '後台備註', 'AGENT', '生日'],
   '訂房': ['編號', '狀態', '訂房代號', '會員ID', '中文姓名', '英文姓名', '樓', '房型', '入住日期', '退房日期', '晚數', '人數',
            '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
@@ -587,7 +587,7 @@ function mergePreMember_(uid, memberId, row, c) {
         const p = rows[i];
         if (p['會員ID'] !== memberId || p['LINE userId'] || p['登記狀態'] !== REG.PRE) continue;
         const upd = {};
-        ['AGENT', '可訂房型', 'Casino Tier', '後台備註', '中文姓名', '英文姓名'].forEach(function (h) { if (p[h] && !c[h]) { upd[h] = p[h]; c[h] = p[h]; } });
+        ['AGENT', '可訂房型', 'Casino Tier', '後台備註', '中文姓名', '英文姓名', '生日'].forEach(function (h) { if (p[h] && !c[h]) { upd[h] = p[h]; c[h] = p[h]; } });
         if (Object.keys(upd).length) setCells_(SHEETS.CUST, row, upd);
         sheet_(SHEETS.CUST).deleteRow(i + 2);
         if (i + 2 < row) row--;
@@ -645,7 +645,10 @@ function apiBulkAddMembers(key, text, agent) {
     String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean).forEach(function (line) {
       const m = line.match(/^([A-Za-z]*\d[A-Za-z0-9-]{2,29})\s*([㐀-鿿豈-﫿]{1,10})?\s*(.*)$/);
       if (!m) { bad.push(line); return; }
-      const mid = m[1].toUpperCase(), zh = (m[2] || '').trim(), en = normEn_(m[3]);
+      let rest = m[3], bd = '';
+      const bm = rest.match(/\s*((?:\d{4}[\/.-])?\d{1,2}[\/.-]\d{1,2})\s*$/);
+      if (bm) { bd = normBirthday_(bm[1]); if (!bd) { bad.push(line); return; } rest = rest.slice(0, bm.index); }
+      const mid = m[1].toUpperCase(), zh = (m[2] || '').trim(), en = normEn_(rest);
       if (en && !/^[A-Z][A-Z '-]{1,59}$/.test(en)) { bad.push(line); return; }
       const rows = readRows_(SHEETS.CUST);
       const idx = rows.map(function (r) { return r['會員ID']; }).lastIndexOf(mid);
@@ -654,13 +657,14 @@ function apiBulkAddMembers(key, text, agent) {
         if (agent) upd['AGENT'] = agent;
         if (zh && !r['中文姓名']) upd['中文姓名'] = zh;
         if (en && !r['英文姓名']) upd['英文姓名'] = en;
+        if (bd) upd['生日'] = bd;
         if (Object.keys(upd).length) setCells_(SHEETS.CUST, idx + 2, upd);
         updated.push(mid + ' ' + (r['中文姓名'] || zh));
         return;
       }
-      const o = { '會員ID': mid, '中文姓名': zh, '英文姓名': en, '狀態': '未加入', '加入時間': now_(), '登記狀態': REG.PRE, 'AGENT': agent, '綁定人': staff.name };
+      const o = { '會員ID': mid, '中文姓名': zh, '英文姓名': en, '狀態': '未加入', '加入時間': now_(), '登記狀態': REG.PRE, 'AGENT': agent, '綁定人': staff.name, '生日': bd };
       appendText_(sh, head.map(function (h) { return o[h] || ''; }));
-      added.push(mid + ' ' + zh + ' ' + en);
+      added.push(mid + ' ' + zh + ' ' + en + (bd ? ' 🎂' + birthdayLabel_(bd) : ''));
     });
   });
   log_('會員管理', staff.name + ' 批次新增 ' + added.length + ' 位' + (agent ? '（AGENT ' + agent + '）' : ''));
@@ -849,6 +853,12 @@ function apiSaveMember(key, uid, d) {
       const an = String(d.agent || '').trim();
       if (an && !readRows_(SHEETS.AGENT).some(function (a) { return a['名稱'] === an; })) throw new Error('找不到 AGENT「' + an + '」。');
       upd['AGENT'] = an;
+    }
+    if (d.birthday !== undefined) {
+      const raw = String(d.birthday || '').trim();
+      const bd = raw ? normBirthday_(raw) : '';
+      if (raw && !bd) throw new Error('生日格式看不懂，請填「3/15」或「1985/3/15」。');
+      upd['生日'] = bd;
     }
     const nameZh = String(d.nameZh || '').trim().slice(0, 30);
     const nameEn = String(d.nameEn || '').trim().replace(/\s+/g, ' ').toUpperCase();
@@ -1391,6 +1401,7 @@ function handleHelper_(ev) {
 
   if (/^(待處理|清單|列表|list)$/i.test(txt)) { reply(pendingList_()); return; }
   if (/^(今日入住|今天入住|今天誰入住)$/.test(txt)) { reply([text_(checkinReport_(todayYmd_()) || '今天沒有預計入住的客人。')]); return; }
+  if (/^(生日|生日提醒|壽星|近期生日)$/.test(txt)) { reply([text_(birthdayUpcomingText_(todayYmd_()))]); return; }
   if (/^(明日提醒|訂車提醒|明天訂車)$/.test(txt)) { reply([text_(carReminder_(addDays_(todayYmd_(), 1)) || '明天入住、退房的客人都已經訂好車了 👍')]); return; }
 
   // 4) 只有一筆待處理時，直接回覆也可以
@@ -1532,7 +1543,63 @@ function setupDailyTriggers() {
   notify_('✅ 每日提醒設定好了：\n・每天 12:00 通知今天入住的客人\n・每天 21:00 提醒明天還沒訂車的訂房');
 }
 
-function dailyNoonReport() { const t = checkinReport_(todayYmd_()); if (t) pushStaff_(t); }
+function dailyNoonReport() {
+  const t = checkinReport_(todayYmd_()); if (t) pushStaff_(t);
+  const b = birthdayReminder_(todayYmd_()); if (b) pushStaff_(b);
+}
+
+/* ----- 會員生日（「客人」工作表「生日」：MM-DD 或 YYYY-MM-DD） ----- */
+const BIRTHDAY_AHEAD = 30;   // 生日前幾天提醒
+function normBirthday_(s) {
+  const p = String(s || '').trim().split(/[\/.\-]/).map(Number);
+  let y = 0, m, d;
+  if (p.length === 3) { y = p[0]; m = p[1]; d = p[2]; } else if (p.length === 2) { m = p[0]; d = p[1]; } else return '';
+  if (y && (y < 1900 || y > Number(todayYmd_().slice(0, 4)))) return '';
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return '';
+  const chk = new Date(Date.UTC(y || 2000, m - 1, d));
+  if (chk.getUTCMonth() !== m - 1) return '';
+  return (y ? y + '-' : '') + pad2_(m) + '-' + pad2_(d);
+}
+function birthdayLabel_(bd) {
+  const p = String(bd).split('-').map(Number);
+  return p.length === 3 ? p[0] + '/' + p[1] + '/' + p[2] : p[0] + '/' + p[1];
+}
+/** 這位客人下一次生日（今天或以後）的 yyyy-MM-dd；2/29 在平年算 2/28 */
+function nextBirthday_(bd, today) {
+  const p = String(bd || '').split('-').map(Number);
+  if (p.length < 2) return '';
+  const m = p[p.length - 2], d = p[p.length - 1];
+  const at = function (y) {
+    const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+    return y + '-' + pad2_(m) + '-' + pad2_(m === 2 && d === 29 && !leap ? 28 : d);
+  };
+  const y = Number(today.slice(0, 4));
+  return at(y) >= today ? at(y) : at(y + 1);
+}
+function birthdayList_(today, from, to) {
+  return readRows_(SHEETS.CUST).map(function (r) {
+    const next = r['生日'] ? nextBirthday_(r['生日'], today) : '';
+    return { r: r, next: next, days: next ? daysBetween_(today, next) : -1 };
+  }).filter(function (x) { return x.next && x.days >= from && x.days <= to; })
+    .sort(function (a, b) { return a.days - b.days; });
+}
+function birthdayLine_(x) {
+  const r = x.r, p = String(r['生日']).split('-');
+  const age = p.length === 3 ? '（滿 ' + (Number(x.next.slice(0, 4)) - Number(p[0])) + ' 歲）' : '';
+  return '🎂 ' + shortMD_(x.next) + '  ' + (r['會員ID'] || '-') + ' ' + (r['中文姓名'] || '') + ' ' + (r['英文姓名'] || r['LINE名稱'] || '') + age +
+    (r['AGENT'] ? '｜AGENT ' + r['AGENT'] : '') + (r['LINE userId'] ? '' : '｜未綁定 LINE');
+}
+/** 12:00：剛好 30 天後生日的客人 */
+function birthdayReminder_(today) {
+  const list = birthdayList_(today, BIRTHDAY_AHEAD, BIRTHDAY_AHEAD);
+  if (!list.length) return '';
+  return '🎉 生日提醒（一個月後）\n\n' + list.map(birthdayLine_).join('\n') + '\n\n可以先準備生日禮遇或邀請入住 🙌';
+}
+function birthdayUpcomingText_(today) {
+  const list = birthdayList_(today, 0, 60);
+  if (!list.length) return '接下來 60 天沒有客人生日。\n（生日在後台「會員」裡每位客人的資料填寫）';
+  return '🎂 接下來 60 天的會員生日\n\n' + list.map(function (x) { return birthdayLine_(x) + (x.days === 0 ? '  👈 今天' : ''); }).join('\n');
+}
 function dailyCarReminder() { const t = carReminder_(addDays_(todayYmd_(), 1)); if (t) pushStaff_(t); }
 
 function pushStaff_(text) {
@@ -1606,7 +1673,7 @@ function pendingList_(withHelp) {
   const regs = pendingRegs_();
   const msgs = [];
   if (withHelp) {
-    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・每天 12:00 通知今天入住、21:00 提醒明天還沒訂的車；也可以傳「今日入住」「明日提醒」隨時查\n・傳「待處理」查看所有待處理'));
+    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・每天 12:00 通知今天入住、21:00 提醒明天還沒訂的車；也可以傳「今日入住」「明日提醒」隨時查\n・會員生日前一個月 12:00 會提醒；傳「生日」看接下來 60 天的壽星\n・傳「待處理」查看所有待處理'));
   }
   if (!p.rooms.length && !p.cars.length && !regs.length) { msgs.push(text_('目前沒有待處理的事項 👍')); return msgs; }
   const bubbles = regs.map(staffRegBubble_)
@@ -1884,6 +1951,7 @@ function listCustomers_() {
       status: r['狀態'] || '好友', last: r['最後訊息'] || r['加入時間'] || '',
       regStatus: r['登記狀態'] || '', docType: r['證件類型'] || '', docUrl: r['證件檔案'] || '', regAt: r['登記時間'] || '',
       access: ACCESS[r['可訂房型']] ? r['可訂房型'] : DEFAULT_ACCESS, tier: r['Casino Tier'] || '', note: r['後台備註'] || '', agent: r['AGENT'] || '',
+      birthday: r['生日'] || '',
     };
   }).filter(function (c) { return c.uid && c.uid !== 'M:'; })
     .sort(function (a, b) { return a.last < b.last ? 1 : -1; });
