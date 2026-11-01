@@ -1401,6 +1401,7 @@ function handleHelper_(ev) {
 
   if (/^(待處理|清單|列表|list)$/i.test(txt)) { reply(pendingList_()); return; }
   if (/^(今日入住|今天入住|今天誰入住)$/.test(txt)) { reply([text_(checkinReport_(todayYmd_()) || '今天沒有預計入住的客人。')]); return; }
+  if (/^(未來預訂|未來預定|所有預訂|所有預定|預訂清單)$/.test(txt)) { reply(futureBookingsMsgs_(todayYmd_())); return; }
   if (/^(生日|生日提醒|壽星|近期生日)$/.test(txt)) { reply([text_(birthdayUpcomingText_(todayYmd_()))]); return; }
   if (/^(明日提醒|訂車提醒|明天訂車)$/.test(txt)) { reply([text_(carReminder_(addDays_(todayYmd_(), 1)) || '明天入住、退房的客人都已經訂好車了 👍')]); return; }
 
@@ -1548,6 +1549,20 @@ function dailyNoonReport() {
   const b = birthdayReminder_(todayYmd_()); if (b) pushStaff_(b);
 }
 
+/** 小幫手「未來預訂」：還沒退房的訂房（含住宿中），依入住日排序。格式：會員ID _ MM/DD ~ MM/DD _ 房型代號 */
+function futureBookingsMsgs_(today) {
+  const rooms = liveRooms_().filter(function (b) { return b.co > today; })
+    .sort(function (a, b) { return a.ci < b.ci ? -1 : a.ci > b.ci ? 1 : (a.memberId < b.memberId ? -1 : 1); });
+  if (!rooms.length) return [text_('目前沒有未來的預訂。')];
+  const lines = rooms.map(function (b) { return (b.memberId || '-') + ' _ ' + shortMD_(b.ci) + ' ~ ' + shortMD_(b.co) + ' _ ' + roomCode_(b.tower, b.room); });
+  const msgs = [], per = 80;
+  for (let i = 0; i < lines.length && msgs.length < 5; i += per) {
+    msgs.push(text_((i === 0 ? '📋 未來預訂（共 ' + rooms.length + ' 筆）\n\n' : '') + lines.slice(i, i + per).join('\n')));
+  }
+  if (lines.length > per * 5) msgs[4].text += '\n\n…還有 ' + (lines.length - per * 5) + ' 筆，請到後台「所有紀錄」查看';
+  return msgs;
+}
+
 /* ----- 會員生日（「客人」工作表「生日」：MM-DD 或 YYYY-MM-DD） ----- */
 const BIRTHDAY_AHEAD = 30;   // 生日前幾天提醒
 function normBirthday_(s) {
@@ -1673,7 +1688,7 @@ function pendingList_(withHelp) {
   const regs = pendingRegs_();
   const msgs = [];
   if (withHelp) {
-    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・每天 12:00 通知今天入住、21:00 提醒明天還沒訂的車；也可以傳「今日入住」「明日提醒」隨時查\n・會員生日前一個月 12:00 會提醒；傳「生日」看接下來 60 天的壽星\n・傳「待處理」查看所有待處理'));
+    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・每天 12:00 通知今天入住、21:00 提醒明天還沒訂的車；也可以傳「今日入住」「明日提醒」隨時查\n・會員生日前一個月 12:00 會提醒；傳「生日」看接下來 60 天的壽星\n・傳「未來預訂」列出所有還沒退房的訂房\n・傳「待處理」查看所有待處理'));
   }
   if (!p.rooms.length && !p.cars.length && !regs.length) { msgs.push(text_('目前沒有待處理的事項 👍')); return msgs; }
   const bubbles = regs.map(staffRegBubble_)
