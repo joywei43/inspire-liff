@@ -1887,6 +1887,29 @@ function apiRefresh(key) { return apiInit(key); }
 function apiSubmitRoom(key, d) {
   const staff = auth_(key);
   const b = validateStaffRoom_(d);
+  if (!b.uid || /^M:/.test(b.uid)) {   // 客人還沒加 LINE（或沒選客人）：先存成預先建立的會員，訂房綁定後自動帶入
+    const bound = readRows_(SHEETS.CUST).filter(function (x) { return x['會員ID'] === b.memberId && x['登記狀態'] === REG.BOUND && x['LINE userId']; })[0];
+    if (bound) b.uid = bound['LINE userId'];
+    else {
+      withLock_(function () {
+        const rows = readRows_(SHEETS.CUST);
+        const idx = rows.map(function (r) { return r['會員ID']; }).lastIndexOf(b.memberId);
+        if (idx < 0) {
+          const o = { '會員ID': b.memberId, '中文姓名': b.nameZh, '英文姓名': b.nameEn, '狀態': '未加入', '加入時間': now_(), '登記狀態': REG.PRE, '綁定人': staff.name };
+          appendText_(sheet_(SHEETS.CUST), HEADERS[SHEETS.CUST].map(function (h) { return o[h] || ''; }));
+        } else {
+          const fill = {};
+          if (!rows[idx]['中文姓名'] && b.nameZh) fill['中文姓名'] = b.nameZh;
+          if (!rows[idx]['英文姓名'] && b.nameEn) fill['英文姓名'] = b.nameEn;
+          if (Object.keys(fill).length) setCells_(SHEETS.CUST, idx + 2, fill);
+        }
+      });
+      const r = staffPreBook_({ memberId: b.memberId, tower: b.tower, room: b.room, roomCode: roomCode_(b.tower, b.room), ci: b.ci, co: b.co,
+        nights: b.nights, code: b.code, nameEn: b.nameEn, via: '後台：', note: '' }, staff.name);
+      return { ok: r.ok, msg: r.ok ? '✅ 已建立 ' + r.id + '（' + b.memberId + ' 還沒加 LINE，綁定後自動出現在「我的預約」）' : r.msg,
+        id: r.id, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80), customers: listCustomers_(), quota: safeQuota_() };
+    }
+  }
   const found = findRow_(SHEETS.CUST, 'LINE userId', b.uid);
   if (!found) throw new Error('找不到這位客人，請重新整理名單。');
   if (found.data['狀態'] === '已封鎖') throw new Error('這位客人已封鎖官方帳號，訊息無法送達。');
@@ -1981,9 +2004,7 @@ function validateStaffRoom_(d) {
     nameEn: s(d.nameEn).replace(/\s+/g, ' ').toUpperCase(), tower: s(d.tower), room: s(d.room),
     ci: s(d.ci), co: s(d.co), people: parseInt(d.people, 10),
   };
-  if (!b.uid) throw new Error('請選擇客人。');
-  if (!b.memberId) throw new Error('請填寫會員ID。');
-  if (!b.nameZh) throw new Error('請填寫中文姓名。');
+  if (!/^[A-Z0-9-]{3,30}$/.test(b.memberId)) throw new Error('請填寫會員ID。');
   if (!/^[A-Z][A-Z ,.'-]{1,59}$/.test(b.nameEn)) throw new Error('請填寫英文姓名（英文字母）。');
   if (CFG.TOWERS.indexOf(b.tower) < 0) throw new Error('請選擇樓。');
   if ((CFG.ROOMS[b.tower] || []).indexOf(b.room) < 0) throw new Error('請選擇房型。');

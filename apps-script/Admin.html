@@ -172,7 +172,7 @@
       <div id="custSearch">
         <input type="search" id="custQ" placeholder="搜尋姓名、英文名或會員ID" autocomplete="off">
         <div class="list" id="custList"><div class="loading">載入中…</div></div>
-        <div class="hint">找不到客人？請客人先加入官方帳號並完成會員登記，再 <button type="button" class="link" id="custReload">重新整理名單</button></div>
+        <div class="hint">找不到客人？直接在下面填會員ID和姓名就能建立，客人資料會一起存起來，下次輸入會員ID 就自動帶入。也可以 <button type="button" class="link" id="custReload">重新整理名單</button></div>
       </div>
     </div>
 
@@ -182,7 +182,7 @@
       <input type="text" id="memberId" class="upper" autocomplete="off">
       <div class="row2">
         <div>
-          <label class="f req" for="nameZh">中文姓名</label>
+          <label class="f" for="nameZh">中文姓名</label>
           <input type="text" id="nameZh" autocomplete="off">
         </div>
         <div>
@@ -330,7 +330,8 @@
   /* ---------- 客人 ---------- */
   const registered = c => c.regStatus === '已綁定' && !!c.memberId;
   function custTitle(c) {
-    return registered(c) ? `${esc(c.nameZh)}` : `${esc(c.lineName || '(未命名)')}<span class="tag">未登記</span>`;
+    if (c.pre) return `${esc(c.nameZh || c.nameEn || c.memberId)}<span class="tag">還沒加 LINE</span>`;
+    return registered(c) ? `${esc(c.nameZh || c.nameEn)}` : `${esc(c.lineName || '(未命名)')}<span class="tag">未登記</span>`;
   }
   const ACC = {
     '全部': { lv: 3, label: '全部房型', sub: '可以訂所有房型，包含迎仕柏套房、Villa' },
@@ -352,14 +353,23 @@
 
   function renderCustList() {
     const q = $('custQ').value.trim().toLowerCase();
-    const list = S.customers.filter(c => !c.pre && (!q || [c.nameZh, c.nameEn, c.memberId, c.lineName].some(v => String(v || '').toLowerCase().includes(q))));
+    const list = S.customers.filter(c => (!q || [c.nameZh, c.nameEn, c.memberId, c.lineName].some(v => String(v || '').toLowerCase().includes(q))));
     $('custList').innerHTML = list.length
       ? list.slice(0, 80).map(c => `
         <div class="opt ${c.status === '已封鎖' ? 'blocked' : ''}" data-uid="${esc(c.uid)}">
           <div class="avatar">${initial(c)}</div>
           <div class="meta"><b>${custTitle(c)}</b><span>${esc(custSub(c))}</span></div>
         </div>`).join('')
-      : `<div class="empty">${S.customers.length ? '找不到符合的客人' : '還沒有客人資料。客人加入官方帳號後就會出現在這裡。'}</div>`;
+      : `<div class="empty">${S.customers.length ? '找不到符合的客人' : '還沒有客人資料。客人加入官方帳號後就會出現在這裡。'}${q && /^[a-z]*\d[a-z0-9-]{2,}$/i.test(q) ? `<br><button type="button" class="link" id="useQ">用「${esc(q.toUpperCase())}」手動新增 →</button>` : ''}</div>`;
+    const u = $('useQ');
+    if (u) u.onclick = () => { $('memberId').value = $('custQ').value.trim().toUpperCase(); $('nameEn').focus(); update(); };
+  }
+  /* 手動輸入會員ID：名單裡有這位就自動帶入 */
+  function autoFillById() {
+    if (S.picked) return;
+    const id = $('memberId').value.trim().toUpperCase();
+    const c = id && S.customers.find(x => String(x.memberId || '').toUpperCase() === id && x.status !== '已封鎖');
+    if (c) { pickCustomer(c.uid); toast('已自動帶入 ' + (c.nameZh || c.nameEn || id)); }
   }
 
   function pickCustomer(uid) {
@@ -398,9 +408,7 @@
   }
   function problems(d) {
     const p = [];
-    if (!d.uid) p.push('選擇客人');
     if (!d.memberId) p.push('會員ID');
-    if (!d.nameZh) p.push('中文姓名');
     if (!/^[A-Z][A-Z ,.'-]{1,59}$/.test(d.nameEn)) p.push('英文姓名');
     if (!d.tower) p.push('樓');
     if (!d.room) p.push('房型');
@@ -420,7 +428,8 @@
     const over = S.picked && S.room && roomLv(S.room) > (ACC[S.picked.access] || ACC['豪華客房']).lv;
     if (over) $('nights').textContent += `${$('nights').textContent ? '　' : ''}⚠ 這位客人設定為「${ACC[S.picked.access].label}」，確定要幫他訂這個房型？`;
     $('submit').disabled = p.length > 0 || S.busy;
-    $('submit').textContent = S.busy ? '傳送中…' : (p.length ? `還缺：${p.slice(0, 3).join('、')}${p.length > 3 ? '…' : ''}` : '確認並傳送給客人');
+    const noLine = !d.uid || /^M:/.test(d.uid);
+    $('submit').textContent = S.busy ? '傳送中…' : (p.length ? `還缺：${p.slice(0, 3).join('、')}${p.length > 3 ? '…' : ''}` : noLine ? '建立訂房（客人還沒加 LINE）' : '確認並傳送給客人');
   }
 
   /* 客人在聊天室收到的簡短通知（按下方按鈕打開彈窗看完整資料） */
@@ -472,8 +481,8 @@
     const d = formData();
     const n = daysBetween(d.ci, d.co);
     openSheet(`
-      <h2>確認傳送？</h2>
-      <p>送出後，客人會立刻在 LINE 收到訂房確認卡（使用 1 則訊息額度）。</p>
+      <h2>${!d.uid || /^M:/.test(d.uid) ? '確認建立？' : '確認傳送？'}</h2>
+      <p>${!d.uid || /^M:/.test(d.uid) ? '這位客人還沒加 LINE，不會傳訊息；他綁定會員卡後，這筆會自動出現在「我的預約」。客人資料會一起存起來，下次輸入會員ID 就自動帶入。' : '送出後，客人會立刻在 LINE 收到訂房確認卡（使用 1 則訊息額度）。'}</p>
       <div class="sum">
         <div><span>會員ID</span>${esc(d.memberId)}</div>
         <div><span>客人姓名</span>${esc(d.nameZh)}　${esc(d.nameEn)}</div>
@@ -492,7 +501,8 @@
       S.busy = true; $('go').disabled = true; $('go').textContent = '傳送中…'; update();
       try {
         const r = await call('apiSubmitRoom', d);
-        S.rooms = r.rooms; setQuota(r.quota); renderAll();
+        S.rooms = r.rooms; setQuota(r.quota); if (r.customers) { S.customers = r.customers; renderMem(); }
+        renderAll();
         closeSheet();
         const c = S.customers.find(x => x.uid === d.uid);
         if (c) { c.memberId = c.memberId || d.memberId; c.nameZh = c.nameZh || d.nameZh; c.nameEn = c.nameEn || d.nameEn; }
@@ -987,6 +997,7 @@
   $('refresh').onclick = () => load(true);
   $('custReload').onclick = () => load(true);
   ['memberId', 'nameZh', 'nameEn', 'code'].forEach(id => $(id).addEventListener('input', () => { $('formErr').classList.remove('on'); update(); }));
+  $('memberId').addEventListener('input', autoFillById);
   $('ci').addEventListener('change', () => {
     const ci = $('ci').value;
     if (ci) {
