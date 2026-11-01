@@ -611,28 +611,35 @@ function normEn_(s) { return String(s || '').replace(/[,，.\/]+/g, ' ').replace
 
 /** 批次預先建立會員：每行「會員ID 中文姓名 英文姓名」，可指定所屬 AGENT */
 /** 後台貼上多筆訂房：每行「會員ID 房型代號 入住~退房 [訂房代號] [備註]」；SHARER 行會併到上一筆的備註 */
-function apiPreBookBatch(key, text) {
-  const staff = auth_(key);
+/** 多行貼上：每行一筆「會員ID 房型 日期 代號」；下一行若是英文姓名（例如 WU,HSIAO CHUAN）＝這筆的客人姓名；SHARER 和其他文字記在備註 */
+function preBookBatch_(text, staffName, via) {
   const lines = String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
   const done = [], bad = [];
-  let pending = null, sharer = [];
+  let pending = null, extra = [];
   const flush = function () {
     if (!pending) return;
-    if (sharer.length) pending.note = [pending.note].concat(sharer).filter(Boolean).join('；');
-    const r = staffPreBook_(pending, staff.name);
-    (r.ok ? done : bad).push((r.ok ? r.id + ' ' : '') + pending.memberId + ' ' + pending.roomCode + ' ' + shortMD_(pending.ci) + '~' + shortMD_(pending.co) + (r.ok ? '' : '：' + r.msg));
-    pending = null; sharer = [];
+    if (extra.length) pending.note = [pending.note].concat(extra).filter(Boolean).join('；');
+    const r = staffPreBook_(pending, staffName);
+    (r.ok ? done : bad).push((r.ok ? r.id + ' ' : '') + pending.memberId + ' ' + pending.roomCode + ' ' + shortMD_(pending.ci) + '~' + shortMD_(pending.co) +
+      (pending.nameEn ? ' ' + pending.nameEn : '') + (r.ok ? '' : '：' + r.msg));
+    pending = null; extra = [];
   };
   lines.forEach(function (l) {
-    if (/^SHARER/i.test(l)) { if (pending) sharer.push(l.replace(/\s+/g, ' ')); return; }
-    const p = parsePreBooking_(l);
-    if (!p) { bad.push(l); return; }
-    if (p.error) { bad.push(l + '：' + p.error); return; }
-    flush();
-    p.via = '後台：';
-    pending = p;
+    const p = /^SHARER/i.test(l) ? null : parsePreBooking_(l);
+    if (p && p.error) { flush(); bad.push(l + '：' + p.error); return; }
+    if (p) { flush(); p.via = via; pending = p; return; }
+    if (!pending) { bad.push(l); return; }
+    const en = normEn_(l);
+    if (!/^SHARER/i.test(l) && !pending.nameEn && !extra.length && /^[A-Z][A-Z '-]{1,59}$/.test(en)) { pending.nameEn = en; return; }
+    extra.push(l.replace(/\s+/g, ' '));
   });
   flush();
+  return { done: done, bad: bad };
+}
+
+function apiPreBookBatch(key, text) {
+  const staff = auth_(key);
+  const res = preBookBatch_(text, staff.name, '後台：'), done = res.done, bad = res.bad;
   return { ok: true, msg: '建立 ' + done.length + ' 筆' + (bad.length ? '、' + bad.length + ' 筆有問題' : ''), done: done, bad: bad, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80) };
 }
 
@@ -1363,6 +1370,13 @@ function handleHelper_(ev) {
   }
 
   // 預先建立訂房：「80060456 SSNK 11/27~11/30」（後面可加訂房代號）
+  if (/\n/.test(txt) && parsePreBooking_(txt.split(/\r?\n/)[0].trim())) {
+    clearState_('h', uid);
+    const res = preBookBatch_(txt, staff.name, '小幫手：');
+    reply([text_((res.done.length ? '✅ 建立 ' + res.done.length + ' 筆\n' + res.done.join('\n') : '沒有建立任何訂房。') +
+      (res.bad.length ? '\n\n⚠ 有問題：\n' + res.bad.join('\n') : ''))]);
+    return;
+  }
   const pre = parsePreBooking_(txt);
   if (pre) { clearState_('h', uid); reply([text_(pre.error ? '⚠ ' + pre.error : staffPreBook_(pre, staff.name).msg)]); return; }
 
@@ -1493,7 +1507,7 @@ function staffPreBook_(p, staffName) {
     }
     id = nextId_('R');
     appendText_(sheet_(SHEETS.ROOM), [id, p.code ? ST.ROOM_OK : ST.ROOM_PENDING, p.code, p.memberId,
-      cust ? cust['中文姓名'] : '', cust ? cust['英文姓名'] : '', p.tower, p.room, p.ci, p.co, String(p.nights), '',
+      cust ? cust['中文姓名'] : '', (cust && cust['英文姓名']) || p.nameEn || '', p.tower, p.room, p.ci, p.co, String(p.nights), '',
       (p.via || '小幫手：') + staffName, p.code ? staffName : '', now_(), p.code ? now_() : '', uid, '', p.note || '']);
     return '';
   });
@@ -1894,6 +1908,47 @@ function apiCancel(key, kind, id, notify) {
   const staff = auth_(key);
   const r = cancelItem_(kind, id, staff.name, !!notify);
   return { ok: r.ok, msg: r.msg, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80), cars: listRows_(SHEETS.CAR, rowToCar_, 80), quota: safeQuota_() };
+}
+
+/** 修改訂房紀錄（打錯時更正）：會員ID、姓名、樓／房型、日期、訂房代號、備註。不會自動通知客人，要通知請按「重新發送」 */
+function apiEditRoom(key, id, d) {
+  const staff = auth_(key);
+  d = d || {};
+  const msg = withLock_(function () {
+    const found = findRow_(SHEETS.ROOM, '編號', id);
+    if (!found) throw new Error('找不到 ' + id + '。');
+    const r = found.data, upd = {}, changed = [];
+    const set = function (k, v, label) { v = String(v == null ? '' : v); if (v !== String(r[k] || '')) { upd[k] = v; changed.push(label); } };
+    const mid = String(d.memberId || '').trim().toUpperCase();
+    if (!/^[A-Z0-9-]{3,30}$/.test(mid)) throw new Error('會員ID 格式不對。');
+    const en = normEn_(d.nameEn || '');
+    if (en && !/^[A-Z][A-Z '-]{1,59}$/.test(en)) throw new Error('英文姓名只能用英文字母。');
+    if (CFG.TOWERS.indexOf(d.tower) < 0 || (CFG.ROOMS[d.tower] || []).indexOf(d.room) < 0) throw new Error('請選擇樓和房型。');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.ci) || !/^\d{4}-\d{2}-\d{2}$/.test(d.co)) throw new Error('請填入住和退房日期。');
+    const n = daysBetween_(d.ci, d.co);
+    if (n < 1 || n > 60) throw new Error('退房日期要晚於入住日期。');
+    const code = String(d.code || '').trim();
+    if (code && code !== r['訂房代號'] && readRows_(SHEETS.ROOM).some(function (x) { return x['訂房代號'] === code && x['狀態'] !== ST.CANCELLED && x['編號'] !== id; }))
+      throw new Error('訂房代號「' + code + '」已經用在別筆了。');
+    set('會員ID', mid, '會員ID');
+    set('中文姓名', String(d.nameZh || '').trim().slice(0, 30), '中文姓名');
+    set('英文姓名', en, '英文姓名');
+    set('樓', d.tower, '樓'); set('房型', d.room, '房型');
+    set('入住日期', d.ci, '入住'); set('退房日期', d.co, '退房'); set('晚數', String(n), '晚數');
+    set('訂房代號', code, '訂房代號');
+    set('備註', String(d.note || '').trim().slice(0, 500), '備註');
+    if (upd['會員ID']) {   // 換會員：重新對應這位會員的 LINE
+      const bound = readRows_(SHEETS.CUST).filter(function (x) { return x['會員ID'] === mid && x['登記狀態'] === REG.BOUND; })[0];
+      upd['LINE userId'] = bound ? bound['LINE userId'] : '';
+    }
+    if (code && r['狀態'] === ST.ROOM_PENDING) { upd['狀態'] = ST.ROOM_OK; upd['處理人'] = staff.name; upd['確認時間'] = now_(); }
+    if (!changed.length) return '沒有變更。';
+    setCells_(SHEETS.ROOM, found.row, upd);
+    log_('修改訂房', staff.name + ' 修改 ' + id + '：' + changed.join('、'));
+    return '✅ 已修改 ' + id + '（' + changed.filter(function (x) { return x !== '晚數'; }).join('、') + '）' +
+      (r['LINE userId'] && r['狀態'] !== ST.ROOM_PENDING ? '。要讓客人看到新資料，請按「重新發送」' : '');
+  });
+  return { ok: true, msg: msg, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80) };
 }
 
 function apiResend(key, kind, id) {

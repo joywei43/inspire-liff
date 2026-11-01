@@ -522,6 +522,7 @@
     const acts = b.status === '已取消' ? '' : `<div class="rec-act">
       ${pending ? `<button class="main" data-act="code" data-kind="room" data-id="${esc(b.id)}">填入訂房代號並通知客人</button>`
         : `<button data-act="resend" data-kind="room" data-id="${esc(b.id)}">${b.status === '通知失敗' ? '重試發送' : '重新發送'}</button>`}
+      <button data-act="edit" data-kind="room" data-id="${esc(b.id)}" style="flex:0 0 64px">修改</button>
       <button class="del" data-act="cancel" data-kind="room" data-id="${esc(b.id)}">${pending ? '無法安排' : '取消'}</button>
     </div>`;
     return `<div class="rec ${pending ? 'pending' : ''}">
@@ -763,8 +764,8 @@
   };
   $('preBtn').onclick = () => {
     openSheet(`<h2>貼上已訂好的訂房</h2>
-      <p>一行一筆：<b>會員ID 房型代號 入住~退房 訂房代號</b>（代號可省略）<br>例如 <code>80217335 ODNT 11/13~17 RDC7CE</code><br>下一行寫「SHARER: …」會記在那筆的備註。客人還沒綁定也可以，綁定後自動出現在他的「我的預約」。</p>
-      <textarea id="preTxt" style="min-height:200px" placeholder="80217335 ODNT 11/13~17 RDC7CE&#10;SHARER: 80217336 PAN LI HSIANG"></textarea>
+      <p>一行一筆：<b>會員ID 房型代號 入住~退房 訂房代號</b>（代號可省略）<br>例如 <code>80217335 ODNT 11/13~17 RDC7CE</code><br>下一行寫英文姓名（例如 WU,HSIAO CHUAN）會當作這筆的客人姓名；寫「SHARER: …」會記在備註。客人還沒綁定也可以，綁定後自動出現在他的「我的預約」。</p>
+      <textarea id="preTxt" style="min-height:200px" placeholder="80217335 ODNT 11/13~17 RDC7CE&#10;WU,HSIAO CHUAN&#10;SHARER: 80217336 PAN LI HSIANG"></textarea>
       <div class="btns" style="margin-top:14px"><button class="btn" id="go">建立</button><button class="btn ghost" id="back">取消</button></div>`);
     $('back').onclick = closeSheet;
     $('go').onclick = async () => {
@@ -825,7 +826,7 @@
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const list = b.dataset.kind === 'room' ? S.rooms : S.cars;
     const item = list.find(x => x.id === b.dataset.id); if (!item) return;
-    ({ code: askCode, arrange: confirmArrange, resend: confirmResend, cancel: confirmCancel })[b.dataset.act](item, b.dataset.kind);
+    ({ code: askCode, arrange: confirmArrange, resend: confirmResend, cancel: confirmCancel, edit: editRoom })[b.dataset.act](item, b.dataset.kind);
   });
 
   function itemSummary(x, kind) {
@@ -860,6 +861,37 @@
     setTimeout(() => inp.focus(), 50);
     $('back').onclick = closeSheet;
     $('go').onclick = () => runAction($('go'), 'apiArrangeCar', [c.id, inp.value.trim()]);
+  }
+
+  function editRoom(b) {
+    const towers = S.cfg.TOWERS || [], rooms = S.cfg.ROOMS || {};
+    const opt = (list, v) => list.map(x => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('');
+    const sel = 'style="width:100%;height:46px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:#fff"';
+    openSheet(`<h2>修改 ${esc(b.id)}</h2>
+      <p>打錯的地方直接改。改完不會自動通知客人，需要的話再按「重新發送」。</p>
+      <div class="row2">
+        <div><label class="f" for="eMid">會員ID</label><input type="text" id="eMid" class="upper" value="${esc(b.memberId)}" autocomplete="off"></div>
+        <div><label class="f" for="eCode">訂房代號</label><input type="text" id="eCode" class="upper" value="${esc(b.code)}" autocomplete="off"></div>
+      </div>
+      <div class="row2">
+        <div><label class="f" for="eZh">中文姓名</label><input type="text" id="eZh" value="${esc(b.nameZh)}" autocomplete="off"></div>
+        <div><label class="f" for="eEn">英文姓名</label><input type="text" id="eEn" class="upper" value="${esc(b.nameEn)}" autocomplete="off"></div>
+      </div>
+      <div class="row2">
+        <div><label class="f" for="eT">樓</label><select id="eT" ${sel}>${opt(towers, b.tower)}</select></div>
+        <div><label class="f" for="eR">房型</label><select id="eR" ${sel}>${opt(rooms[b.tower] || [], b.room)}</select></div>
+      </div>
+      <div class="row2">
+        <div><label class="f" for="eCi">入住日期</label><input type="date" id="eCi" value="${esc(b.ci)}"></div>
+        <div><label class="f" for="eCo">退房日期</label><input type="date" id="eCo" value="${esc(b.co)}"></div>
+      </div>
+      <label class="f" for="eNote">備註</label>
+      <textarea id="eNote">${esc(b.note)}</textarea>
+      <div class="btns" style="margin-top:14px"><button class="btn" id="go">儲存修改</button><button class="btn ghost" id="back">取消</button></div>`);
+    $('eT').onchange = () => { $('eR').innerHTML = opt(rooms[$('eT').value] || [], ''); };
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => runAction($('go'), 'apiEditRoom', [b.id, { memberId: $('eMid').value.trim(), code: $('eCode').value.trim(), nameZh: $('eZh').value.trim(),
+      nameEn: $('eEn').value.trim(), tower: $('eT').value, room: $('eR').value, ci: $('eCi').value, co: $('eCo').value, note: $('eNote').value }]);
   }
 
   function confirmResend(x, kind) {
