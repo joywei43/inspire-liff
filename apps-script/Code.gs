@@ -48,16 +48,17 @@ const CFG = {
   },
 };
 
-const SHEETS = { CUST: '客人', ROOM: '訂房', CAR: '訂車', STAFF: '使用者', LOG: '紀錄', EVENT: '活動' };
+const SHEETS = { CUST: '客人', ROOM: '訂房', CAR: '訂車', STAFF: '使用者', LOG: '紀錄', EVENT: '活動', AGENT: 'AGENT' };
 const HEADERS = {
   '客人': ['LINE userId', 'LINE名稱', '會員ID', '中文姓名', '英文姓名', '狀態', '加入時間', '最後訊息', '備註',
-          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId', 'Casino Tier', '可訂房型', '後台備註'],
+          '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId', 'Casino Tier', '可訂房型', '後台備註', 'AGENT'],
   '訂房': ['編號', '狀態', '訂房代號', '會員ID', '中文姓名', '英文姓名', '樓', '房型', '入住日期', '退房日期', '晚數', '人數',
            '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
            '來源', '處理人', '建立時間', '安排時間', 'LINE userId', '通知訊息ID', '備註', '訂車代號'],
   '使用者': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId'],
   '紀錄': ['時間', '來源', '內容'],
+  'AGENT': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId', '備註'],
   '活動': ['顯示', '排序', '標題', '說明', '海報網址', '連結', '更新時間'],
 };
 
@@ -288,6 +289,15 @@ function testLine() {
  * ============================================================ */
 
 function doGet(e) {
+  const akey = (e && e.parameter && e.parameter.a) || '';
+  if (akey) {
+    const ag = findAgent_(akey);
+    if (!ag) return HtmlService.createHtmlOutput('<meta name="viewport" content="width=device-width,initial-scale=1"><p style="font-family:sans-serif;padding:32px;color:#555">這個 AGENT 連結已失效，請向小魏索取新連結。</p>').setTitle('AGENT');
+    const at = HtmlService.createTemplateFromFile('Agent');
+    at.keyJson = safeJson_(akey);
+    at.nameJson = safeJson_(ag.name);
+    return at.evaluate().setTitle('AGENT｜' + ag.name).addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
+  }
   const key = (e && e.parameter && e.parameter.k) || '';
   const staff = findStaff_(key);
   if (!staff) {
@@ -743,6 +753,11 @@ function apiSaveMember(key, uid, d) {
     const found = findRow_(SHEETS.CUST, 'LINE userId', uid);
     if (!found) throw new Error('找不到這位客人，請重新整理。');
     const upd = { '可訂房型': access, 'Casino Tier': tier, '後台備註': note };
+    if (d.agent !== undefined) {
+      const an = String(d.agent || '').trim();
+      if (an && !readRows_(SHEETS.AGENT).some(function (a) { return a['名稱'] === an; })) throw new Error('找不到 AGENT「' + an + '」。');
+      upd['AGENT'] = an;
+    }
     const nameZh = String(d.nameZh || '').trim().slice(0, 30);
     const nameEn = String(d.nameEn || '').trim().replace(/\s+/g, ' ').toUpperCase();
     if (nameZh) upd['中文姓名'] = nameZh;
@@ -762,6 +777,115 @@ function apiSaveMember(key, uid, d) {
     return '已儲存 ' + (found.data['中文姓名'] || found.data['LINE名稱']);
   });
   return { ok: true, msg: msg, customers: listCustomers_() };
+}
+
+/* ============================================================
+ * AGENT：看自己底下客人的預訂，幫客人送出訂房／訂車需求，綁定小幫手收通知
+ * ============================================================ */
+function agentLink_(key) {
+  const url = PropertiesService.getScriptProperties().getProperty('WEBAPP_URL');
+  return url ? url + '?a=' + key : '';
+}
+function findAgent_(key) {
+  if (!key || String(key).length < 20) return null;
+  let r = null;
+  try { r = readRows_(SHEETS.AGENT).filter(function (x) { return x['金鑰'] === key && isOn_(x['啟用']); })[0]; } catch (_) {}
+  return r ? { name: r['名稱'], key: key } : null;
+}
+function agentAuth_(key) {
+  const a = findAgent_(key);
+  if (!a) throw new Error('AGENT 連結已失效，請向小魏索取新連結。');
+  return a;
+}
+function listAgents_() {
+  let rows = [];
+  try { rows = readRows_(SHEETS.AGENT); } catch (_) {}
+  const custs = readRows_(SHEETS.CUST);
+  return rows.map(function (r) {
+    return { name: r['名稱'], on: isOn_(r['啟用']), bound: !!r['小幫手 userId'], link: agentLink_(r['金鑰']),
+      count: custs.filter(function (c) { return c['AGENT'] === r['名稱']; }).length };
+  });
+}
+function apiAddAgent(key, name) {
+  auth_(key);
+  name = String(name || '').trim().slice(0, 30);
+  if (!name) throw new Error('請輸入 AGENT 名稱。');
+  const code = withLock_(function () {
+    if (readRows_(SHEETS.AGENT).some(function (a) { return a['名稱'] === name; })) throw new Error('已經有叫「' + name + '」的 AGENT。');
+    const k = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
+    appendText_(sheet_(SHEETS.AGENT), [name, k, '是', now_(), '', '']);
+    return makeBindCode_(k);
+  });
+  return { ok: true, msg: '已新增 AGENT ' + name, code: code, agents: listAgents_() };
+}
+function apiAgentBindCode(key, name) {
+  auth_(key);
+  const f = findRow_(SHEETS.AGENT, '名稱', name);
+  if (!f) throw new Error('找不到這個 AGENT。');
+  return { ok: true, code: makeBindCode_(f.data['金鑰']) };
+}
+function apiSetAgentOn(key, name, on) {
+  auth_(key);
+  const f = findRow_(SHEETS.AGENT, '名稱', name);
+  if (!f) throw new Error('找不到這個 AGENT。');
+  setCells_(SHEETS.AGENT, f.row, { '啟用': on ? '是' : '否' });
+  return { ok: true, msg: name + (on ? ' 已啟用' : ' 已停用（連結和通知都會停止）'), agents: listAgents_() };
+}
+
+/** AGENT 網頁：他底下的客人＋預訂 */
+function agentInit(key) {
+  const ag = agentAuth_(key);
+  const mine = readRows_(SHEETS.CUST).filter(function (c) { return c['AGENT'] === ag.name && c['LINE userId']; });
+  const uids = mine.map(function (c) { return c['LINE userId']; });
+  const since = addDays_(todayYmd_(), -60);
+  const pub = function (x, kind) { const o = kind === 'room' ? publicRoom_(x) : publicCar_(x); o.uid = x['LINE userId']; o.source = x['來源']; return o; };
+  return {
+    agent: ag.name,
+    customers: mine.map(function (c) {
+      return { uid: c['LINE userId'], nameZh: c['中文姓名'] || c['LINE名稱'], nameEn: c['英文姓名'], memberId: c['會員ID'],
+        registered: isRegistered_(c), tier: c['Casino Tier'] || CFG.REQ.TIER, rooms: allowedRooms_(c) };
+    }),
+    rooms: readRows_(SHEETS.ROOM).filter(function (r) { return uids.indexOf(r['LINE userId']) >= 0 && r['退房日期'] >= since; }).map(function (r) { return pub(r, 'room'); }).reverse(),
+    cars: readRows_(SHEETS.CAR).filter(function (r) { return uids.indexOf(r['LINE userId']) >= 0 && String(r['航班時間']).slice(0, 10) >= since; }).map(function (r) { return pub(r, 'car'); }).reverse(),
+    cfg: { towers: CFG.TOWERS, maxRoomPeople: CFG.MAX_ROOM_PEOPLE, maxCarPax: CFG.MAX_CAR_PAX, checkin: CFG.CHECKIN_TIME, checkout: CFG.CHECKOUT_TIME, today: todayYmd_() },
+  };
+}
+function agentCust_(ag, uid) {
+  const f = findRow_(SHEETS.CUST, 'LINE userId', uid);
+  if (!f || f.data['AGENT'] !== ag.name) throw new Error('這位客人不在您的名單裡。');
+  if (!isRegistered_(f.data)) throw new Error('這位客人還沒完成會員卡綁定，請先請他在 LINE 登記。');
+  return f.data;
+}
+function agentSubmitRoom(key, d) {
+  const ag = agentAuth_(key);
+  const cust = agentCust_(ag, d.uid);
+  const b = createRoomRequest_(d.uid, cust, validateCustomerRoom_(d, cust), 'AGENT：' + ag.name);
+  return { ok: true, msg: '已送出訂房需求 ' + b.id + '，小魏確認後會通知您和客人。', data: agentInit(key) };
+}
+function agentSubmitCar(key, d) {
+  const ag = agentAuth_(key);
+  const cust = agentCust_(ag, d.uid);
+  const c = createCarRequest_(d.uid, cust, validateCustomerCar_(d), 'AGENT：' + ag.name);
+  return { ok: true, msg: '已送出' + c.type + '需求 ' + c.id + '，小魏安排好會通知您和客人。', data: agentInit(key) };
+}
+
+/** 推播給客人所屬的 AGENT（AGENT 有綁定小幫手才會收到） */
+function notifyAgent_(uid, text) {
+  try {
+    if (!uid) return;
+    const c = findRow_(SHEETS.CUST, 'LINE userId', uid);
+    const name = c && c.data['AGENT'];
+    if (!name) return;
+    const a = readRows_(SHEETS.AGENT).filter(function (x) { return x['名稱'] === name && isOn_(x['啟用']) && x['小幫手 userId']; })[0];
+    if (!a) return;
+    const res = push_('h', a['小幫手 userId'], [text_('【' + name + '】\n' + text)]);
+    if (!res.ok) log_('AGENT 通知', name + '：' + res.error);
+  } catch (err) { log_('AGENT 通知', err.message); }
+}
+function notifyAgentNew_(kind, x) {
+  notifyAgent_(x.uid, kind === 'room'
+    ? '🏨 新訂房需求 ' + x.id + '\n' + x.nameZh + ' ' + x.nameEn + '\n' + x.tower + '・' + x.room + '\n' + fmtYmd_(x.ci) + ' → ' + fmtYmd_(x.co) + '\n小魏確認後會再通知您。'
+    : '🚗 新' + x.type + '需求 ' + x.id + '\n' + x.nameZh + ' ' + x.nameEn + '\n航班 ' + x.flight + '・' + fmtDT_(x.ftime) + '\n小魏安排好會再通知您。');
 }
 
 function apiReject(key, uid, reason) {
@@ -978,6 +1102,7 @@ function createRoomRequest_(uid, cust, d, source) {
   });
   b.status = ST.ROOM_PENDING;
   notifyStaff_('room', b, cust);
+  notifyAgentNew_('room', b);
   return b;
 }
 
@@ -993,6 +1118,7 @@ function createCarRequest_(uid, cust, d, source) {
   });
   c.status = ST.CAR_PENDING;
   notifyStaff_('car', c, cust);
+  notifyAgentNew_('car', c);
   return c;
 }
 
@@ -1035,7 +1161,11 @@ function handleHelper_(ev) {
   const txt = ev.type === 'message' && ev.message.type === 'text' ? String(ev.message.text).trim() : '';
   const bind = txt.match(/^綁定\s*(\d{6})$/) || (!staff && txt.match(/^(\d{6})$/));
   if (bind) { reply([text_(bindHelper_(uid, bind[1]))]); return; }
-  if (!staff) { reply([text_('你還沒綁定。請傳「綁定 六位數綁定碼」。')]); return; }
+  if (!staff) {
+    const ag = readRows_(SHEETS.AGENT).filter(function (a) { return a['小幫手 userId'] === uid && isOn_(a['啟用']); })[0];
+    reply([text_(ag ? ag['名稱'] + ' 您好！這裡只會通知您客人的預訂狀況。\n查詢或幫客人送出需求，請用專屬網頁：\n' + agentLink_(ag['金鑰']) : '你還沒綁定。請傳「綁定 六位數綁定碼」。')]);
+    return;
+  }
 
   // 按鈕
   if (ev.type === 'postback') {
@@ -1401,6 +1531,12 @@ function bindHelper_(uid, code) {
   const info = JSON.parse(raw);
   props.deleteProperty('BIND_' + code);
   if (Date.now() > info.exp) return '綁定碼已過期，請重新產生一組。';
+  const ag = findRow_(SHEETS.AGENT, '金鑰', info.key);
+  if (ag) {
+    if (!isOn_(ag.data['啟用'])) return '這個 AGENT 已停用。';
+    setCells_(SHEETS.AGENT, ag.row, { '小幫手 userId': uid });
+    return '✅ 綁定完成！' + ag.data['名稱'] + '，您的客人有新的訂房、訂車或確認時，會在這裡通知您。\n查詢或幫客人送出需求，請用專屬網頁：\n' + agentLink_(info.key);
+  }
   const found = findRow_(SHEETS.STAFF, '金鑰', info.key);
   if (!found || !isOn_(found.data['啟用'])) return '這個使用者已停用。';
   setCells_(SHEETS.STAFF, found.row, { '小幫手 userId': uid });
@@ -1435,6 +1571,7 @@ function confirmRoom_(id, code, staffName) {
     setCells_(SHEETS.ROOM, row, { '狀態': ST.FAILED, '備註': res.error });
     return { ok: false, msg: '⚠️ 已存下代號，但傳給客人失敗：' + res.error + '\n可到填單網頁按「重試」。' };
   }
+  notifyAgent_(b.uid, '✅ 訂房已確認 ' + id + '\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room + '\n' + fmtYmd_(b.ci) + ' → ' + fmtYmd_(b.co) + '\n訂房代號：' + code);
   return { ok: true, msg: '✅ 已把訂房代號 ' + code + ' 傳給 ' + b.nameZh + '（' + id + '，' + fmtMD_(b.ci) + ' 入住）。' };
 }
 
@@ -1466,6 +1603,7 @@ function arrangeCar_(id, staffName, code) {
     setCells_(SHEETS.CAR, row, { '狀態': ST.FAILED, '備註': res.error });
     return { ok: false, msg: '⚠️ 已標記安排好，但通知客人失敗：' + res.error };
   }
+  notifyAgent_(c.uid, '✅ ' + c.type + '已安排 ' + id + '\n' + c.nameZh + ' ' + c.nameEn + '\n航班 ' + c.flight + '・' + fmtDT_(c.ftime) + (c.code ? '\n訂車代號：' + c.code : ''));
   if (mode === 'code') return { ok: true, msg: '✅ 已補上 ' + id + ' 的訂車代號 ' + code + '，並通知 ' + c.nameZh + '。' };
   return { ok: true, msg: '✅ 已通知 ' + c.nameZh + '：' + c.type + '車子安排好了（' + id + '，' + c.flight + (code ? '，代號 ' + code : '') + '）。' };
 }
@@ -1476,6 +1614,7 @@ function cancelItem_(kind, id, staffName, notify) {
   if (!found) return { ok: false, msg: '找不到 ' + id + '。' };
   if (found.data['狀態'] === ST.CANCELLED) return { ok: false, msg: id + ' 已經取消了。' };
   setCells_(sheetName, found.row, { '狀態': ST.CANCELLED, '處理人': staffName, '備註': '由 ' + staffName + ' 於 ' + now_() + ' 取消' });
+  notifyAgent_(found.data['LINE userId'], '❌ 已取消 ' + id + '\n' + found.data['中文姓名'] + ' ' + found.data['英文姓名'] + '\n' + (kind === 'room' ? found.data['樓'] + '・' + found.data['房型'] + '・' + fmtYmd_(found.data['入住日期']) + ' 入住' : found.data['類型'] + ' ' + found.data['航班']));
   if (!notify || !found.data['LINE userId']) return { ok: true, msg: '已取消 ' + id + (found.data['LINE userId'] ? '（沒有通知客人）。' : '（客人還沒綁定 LINE，不用通知）。') };
   const item = kind === 'room' ? rowToRoom_(found.data) : rowToCar_(found.data);
   const wasPending = found.data['狀態'] === ST.ROOM_PENDING || found.data['狀態'] === ST.CAR_PENDING;
@@ -1519,6 +1658,7 @@ function apiInit(key) {
     cars: listRows_(SHEETS.CAR, rowToCar_, 80),
     quota: safeQuota_(),
     cfg: CFG,
+    agents: listAgents_(),
   };
 }
 function apiRefresh(key) { return apiInit(key); }
@@ -1636,7 +1776,7 @@ function listCustomers_() {
       uid: r['LINE userId'], lineName: r['LINE名稱'], memberId: r['會員ID'], nameZh: r['中文姓名'], nameEn: r['英文姓名'],
       status: r['狀態'] || '好友', last: r['最後訊息'] || r['加入時間'] || '',
       regStatus: r['登記狀態'] || '', docType: r['證件類型'] || '', docUrl: r['證件檔案'] || '', regAt: r['登記時間'] || '',
-      access: ACCESS[r['可訂房型']] ? r['可訂房型'] : '全部', tier: r['Casino Tier'] || '', note: r['後台備註'] || '',
+      access: ACCESS[r['可訂房型']] ? r['可訂房型'] : '全部', tier: r['Casino Tier'] || '', note: r['後台備註'] || '', agent: r['AGENT'] || '',
     };
   }).filter(function (c) { return c.uid; })
     .sort(function (a, b) { return a.last < b.last ? 1 : -1; });

@@ -230,6 +230,11 @@
       <input type="search" id="memQ" placeholder="搜尋姓名、英文名、會員ID、LINE 名稱">
       <button id="memRefresh" title="重新整理">↻</button>
     </div>
+    <div class="card" id="agentCard">
+      <h3 style="margin:0 0 8px">AGENT</h3>
+      <div id="agentList"></div>
+      <div class="tool" style="margin:10px 0 0"><input type="text" id="agentName" placeholder="新增 AGENT 名稱" autocomplete="off"><button id="agentAdd" title="新增">＋</button></div>
+    </div>
     <div id="memList"><div class="loading">載入中…</div></div>
   </section>
 
@@ -593,7 +598,7 @@
       <div class="rec" data-mem="${esc(c.uid)}" style="cursor:pointer">
         <div class="rec-top">
           <div><div class="rec-name">${registered(c) ? esc(c.nameZh) : esc(c.lineName || '(未命名)')}<small>${esc(c.nameEn)}</small>${accTag(c)}</div>
-            <div class="rec-sub">${registered(c) ? '會員 ' + esc(c.memberId) : esc(custSub(c))}・LINE ${esc(c.lineName)}${c.tier ? '・' + esc(c.tier) : ''}</div></div>
+            <div class="rec-sub">${registered(c) ? '會員 ' + esc(c.memberId) : esc(custSub(c))}・LINE ${esc(c.lineName)}${c.tier ? '・' + esc(c.tier) : ''}${c.agent ? '・AGENT ' + esc(c.agent) : ''}</div></div>
           <span class="badge">${c.status === '已封鎖' ? '已封鎖' : '編輯'}</span>
         </div>
         ${c.note ? `<div class="mnote">📝 ${esc(c.note)}</div>` : ''}
@@ -615,14 +620,59 @@
         <div><label class="f" for="mId">會員ID</label><input type="text" id="mId" class="upper" value="${esc(c.memberId)}" autocomplete="off"></div>
         <div><label class="f">Casino Tier</label><div class="seg" id="mTier">${['Royal', 'Royal Black'].map(t => `<button type="button" data-v="${t}" class="${(/black/i.test(c.tier) ? 'Royal Black' : 'Royal') === t ? 'on' : ''}">${t}</button>`).join('')}</div></div>
       </div>
+      <label class="f" for="mAgent">所屬 AGENT</label>
+      <select id="mAgent" style="width:100%;height:46px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:#fff">
+        <option value="">（沒有）</option>${(S.agents || []).map(a => `<option value="${esc(a.name)}" ${a.name === c.agent ? 'selected' : ''}>${esc(a.name)}${a.on ? '' : '（已停用）'}</option>`).join('')}
+      </select>
       <label class="f" for="mNote">後台備註（客人看不到）</label>
       <textarea id="mNote" placeholder="例如：喜歡高樓層、不抽菸、生日 3/15">${esc(c.note)}</textarea>
       <div class="btns" style="margin-top:14px"><button class="btn" id="go">儲存</button><button class="btn ghost" id="back">取消</button></div>`);
     $('mTier').onclick = e => { const b = e.target.closest('button'); if (!b) return; [...$('mTier').children].forEach(x => x.classList.toggle('on', x === b)); };
     $('accSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; acc = b.dataset.v; [...$('accSeg').children].forEach(x => x.classList.toggle('on', x === b)); };
     $('back').onclick = closeSheet;
-    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, nameZh: $('mZh').value.trim(), nameEn: $('mEn').value.trim(), memberId: $('mId').value.trim(), tier: $('mTier').querySelector('.on').dataset.v, note: $('mNote').value }]);
+    $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, nameZh: $('mZh').value.trim(), nameEn: $('mEn').value.trim(), memberId: $('mId').value.trim(), tier: $('mTier').querySelector('.on').dataset.v, note: $('mNote').value, agent: $('mAgent').value }]);
   }
+
+  /* ---------- AGENT ---------- */
+  function renderAgents() {
+    const list = S.agents || [];
+    $('agentList').innerHTML = list.length ? list.map(a => `
+      <div class="rec" style="margin-bottom:8px;${a.on ? '' : 'opacity:.55'}">
+        <div class="rec-top"><div><div class="rec-name">${esc(a.name)}</div>
+          <div class="rec-sub">${a.count} 位客人・${a.bound ? '✓ 已綁定小幫手' : '未綁定小幫手（收不到通知）'}${a.on ? '' : '・已停用'}</div></div></div>
+        <div class="rec-act">
+          <button data-ag="link" data-name="${esc(a.name)}">複製專屬網頁</button>
+          <button data-ag="code" data-name="${esc(a.name)}">小幫手綁定碼</button>
+          <button class="del" data-ag="${a.on ? 'off' : 'on'}" data-name="${esc(a.name)}">${a.on ? '停用' : '啟用'}</button>
+        </div>
+      </div>`).join('') : '<div class="hint" style="margin:0">還沒有 AGENT。輸入名稱按＋新增，再到客人資料裡選「所屬 AGENT」。</div>';
+  }
+  function showAgentCode(name, code) {
+    const a = (S.agents || []).find(x => x.name === name) || {};
+    openSheet(`<h2>${esc(name)}</h2>
+      <p>把下面兩樣私下傳給 ${esc(name)}：</p>
+      <label class="f">① 專屬網頁（查詢客人預訂、幫客人送出需求）</label>
+      <textarea readonly onclick="this.select()" style="min-height:64px;font-size:12px">${esc(a.link || '')}</textarea>
+      <label class="f">② 加「小魏訂房小幫手」（@715vhfuj）好友後傳</label>
+      <div style="font-size:24px;font-weight:800;letter-spacing:2px;background:var(--gold-soft);padding:12px;border-radius:10px;text-align:center">${esc(code)}</div>
+      <p class="hint">綁定碼 24 小時內有效、只能用一次。網址等同鑰匙，請不要外流；停用 AGENT 後連結就失效。</p>
+      <div class="btns"><button class="btn ghost" id="back">關閉</button></div>`);
+    $('back').onclick = closeSheet;
+  }
+  $('agentAdd').onclick = async () => {
+    const name = $('agentName').value.trim(); if (!name) return;
+    try { const r = await call('apiAddAgent', name); S.agents = r.agents; $('agentName').value = ''; renderAgents(); showAgentCode(name, r.code); }
+    catch (e) { toast(e.message, true); }
+  };
+  $('agentList').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-ag]'); if (!b) return;
+    const name = b.dataset.name, a = (S.agents || []).find(x => x.name === name) || {};
+    try {
+      if (b.dataset.ag === 'link') { await navigator.clipboard.writeText(a.link || ''); toast('已複製 ' + name + ' 的專屬網頁'); }
+      else if (b.dataset.ag === 'code') { const r = await call('apiAgentBindCode', name); showAgentCode(name, r.code); }
+      else { const r = await call('apiSetAgentOn', name, b.dataset.ag === 'on'); S.agents = r.agents; renderAgents(); toast(r.msg); }
+    } catch (err) { toast(err.message, true); }
+  });
 
   function renderAll() { renderTodo(); renderRecs(); renderMem(); }
 
@@ -758,7 +808,7 @@
   async function load(showToast) {
     try {
       const r = await call('apiRefresh');
-      S.customers = r.customers; S.rooms = r.rooms; S.cars = r.cars; S.cfg = r.cfg;
+      S.customers = r.customers; S.rooms = r.rooms; S.cars = r.cars; S.cfg = r.cfg; S.agents = r.agents || []; renderAgents();
       setQuota(r.quota);
       seg($('tower'), S.cfg.TOWERS, 'tower');
       roomSeg();

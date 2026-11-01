@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root{
+    --plum:#2B1B3D; --plum-2:#3D2A54; --gold:#C9A45C; --gold-soft:#F6F1E7; --gold-text:#8A6F3A;
+    --ink:#1F1A24; --mute:#8A8494; --line:#E7E2EA; --bg:#F7F5F2; --card:#FFFFFF;
+    --ok:#2F7D4F; --ok-bg:#E7F4EC; --bad:#B4352B; --bad-bg:#FBEAE8; --warn:#7A5600; --warn-bg:#FFF4D6;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;font-size:16px;line-height:1.5}
+  button,input,select{font:inherit;color:inherit}
+  .top{position:sticky;top:0;z-index:5;background:var(--plum);color:#fff;padding:14px 16px 0}
+  .top-in{max-width:720px;margin:0 auto}
+  .top small{display:block;color:var(--gold);font-size:11px;letter-spacing:.12em;font-weight:700}
+  .top b{font-size:18px}
+  .tabs{display:flex;gap:4px;margin-top:12px}
+  .tab{flex:1;background:none;border:0;color:rgba(255,255,255,.65);padding:10px 0 12px;font-weight:600;border-bottom:3px solid transparent;cursor:pointer}
+  .tab.on{color:#fff;border-color:var(--gold)}
+  main{max-width:720px;margin:0 auto;padding:16px 16px 40px}
+  .panel{display:none}.panel.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+  .name{font-weight:700;font-size:17px}.name small{font-weight:500;color:var(--mute);font-size:13px;margin-left:6px}
+  .sub{color:var(--mute);font-size:13px}
+  .acts{display:flex;gap:8px;margin-top:10px}
+  .acts button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:600;cursor:pointer}
+  .acts button.main{background:var(--plum);color:#fff;border-color:var(--plum)}
+  .acts button:disabled{opacity:.45}
+  .row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .badge{flex:none;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EEE;color:#777;white-space:nowrap}
+  .badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.wait{background:var(--warn-bg);color:var(--warn)}.badge.bad{background:var(--bad-bg);color:var(--bad)}
+  .info{margin-top:6px;font-size:14px}
+  .code{display:inline-block;margin-top:6px;font-weight:800;letter-spacing:.04em;background:var(--gold-soft);color:var(--plum);padding:4px 10px;border-radius:8px}
+  .tool{display:flex;gap:8px;margin-bottom:12px}
+  input[type=text],input[type=search],input[type=date],input[type=datetime-local],input[type=number]{width:100%;height:46px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:#fff}
+  .tool button{flex:none;width:46px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer}
+  label.f{display:block;font-size:13px;color:var(--mute);margin:14px 0 6px}
+  .seg{display:flex;flex-wrap:wrap;gap:6px}
+  .seg button{flex:1 1 auto;min-height:42px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:6px 10px;cursor:pointer}
+  .seg button.on{background:var(--plum);color:#fff;border-color:var(--plum)}
+  .row2{display:flex;gap:10px}.row2>div{flex:1;min-width:0}
+  .empty{text-align:center;color:var(--mute);padding:36px 10px}
+  .mask{position:fixed;inset:0;background:rgba(20,12,30,.45);display:none;align-items:flex-end;justify-content:center;z-index:20}
+  .mask.on{display:flex}
+  .sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:20px 18px 24px}
+  .sheet h2{margin:0 0 4px;font-size:19px}
+  .btn{width:100%;height:50px;border:0;border-radius:12px;background:var(--plum);color:#fff;font-weight:700;font-size:16px;cursor:pointer;margin-top:16px}
+  .btn.ghost{background:#fff;color:var(--plum);border:1px solid var(--line);margin-top:8px}
+  .btn:disabled{opacity:.5}
+  .err{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:12px;display:none}
+  .toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-140%);transition:transform .25s;z-index:30;background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;max-width:92vw}
+  .toast.on{transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <small>INSPIRE · 小魏JOY</small><b id="agName">AGENT</b>
+  <nav class="tabs">
+    <button class="tab on" data-tab="cust">我的客人</button>
+    <button class="tab" data-tab="recs">預訂紀錄</button>
+  </nav>
+</div></header>
+<main>
+  <section class="panel on" id="p-cust"><div id="custList"><div class="empty">載入中…</div></div></section>
+  <section class="panel" id="p-recs">
+    <div class="tool"><input type="search" id="q" placeholder="搜尋客人、會員ID、代號、航班"><button id="reload" title="重新整理">↻</button></div>
+    <div id="recList"></div>
+  </section>
+</main>
+<div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+  const KEY = <?!= keyJson ?>;
+  const AGENT = <?!= nameJson ?>;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const D = { customers: [], rooms: [], cars: [], cfg: {} };
+  function call(fn, ...args) {
+    return new Promise((ok, bad) => google.script.run.withSuccessHandler(ok).withFailureHandler(e => bad(e && e.message ? e : new Error(String(e))))[fn](KEY, ...args));
+  }
+  function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 3500); }
+  const ymd = s => s ? s.slice(0, 10).replace(/-/g, '/') : '';
+  const dt = s => s ? ymd(s) + ' ' + s.slice(11, 16) : '';
+  function addDays(d, n) { const p = d.split('-').map(Number); return new Date(Date.UTC(p[0], p[1]-1, p[2] + n)).toISOString().slice(0, 10); }
+  function badge(st) { const c = /已確認|已安排/.test(st) ? 'ok' : /待/.test(st) ? 'wait' : /取消/.test(st) ? 'bad' : ''; return `<span class="badge ${c}">${esc(st)}</span>`; }
+  const cust = uid => D.customers.find(c => c.uid === uid) || {};
+
+  function render() {
+    $('agName').textContent = 'AGENT｜' + AGENT;
+    const today = D.cfg.today || '';
+    $('custList').innerHTML = D.customers.length ? D.customers.map(c => {
+      const up = D.rooms.filter(r => r.uid === c.uid && r.status !== '已取消' && r.co >= today).length;
+      return `<div class="card">
+        <div class="row"><div><div class="name">${esc(c.nameZh)}<small>${esc(c.nameEn)}</small></div>
+          <div class="sub">${c.registered ? '會員 ' + esc(c.memberId) + '・' + esc(c.tier) : '還沒完成會員卡綁定'}${up ? '・即將入住 ' + up + ' 筆' : ''}</div></div></div>
+        <div class="acts">
+          <button class="main" data-room="${esc(c.uid)}" ${c.registered ? '' : 'disabled'}>幫他訂房</button>
+          <button data-car="${esc(c.uid)}" ${c.registered ? '' : 'disabled'}>幫他訂車</button>
+          <button data-see="${esc(c.uid)}">看預訂</button>
+        </div></div>`;
+    }).join('') : '<div class="empty">目前還沒有客人掛在您名下。<br>請小魏在後台把客人設定給您。</div>';
+    renderRecs();
+  }
+  function renderRecs() {
+    const q = $('q').value.trim().toLowerCase();
+    const all = D.rooms.map(r => Object.assign({ k: 'room', sort: r.ci }, r)).concat(D.cars.map(c => Object.assign({ k: 'car', sort: c.ftime }, c)))
+      .sort((a, b) => a.sort < b.sort ? 1 : -1)
+      .filter(x => !q || [x.id, x.nameZh, x.nameEn, cust(x.uid).memberId, x.code, x.flight].some(v => String(v || '').toLowerCase().includes(q)));
+    $('recList').innerHTML = all.length ? all.map(x => x.k === 'room'
+      ? `<div class="card"><div class="row"><div><div class="sub">🏨 ${esc(x.id)}</div><div class="name">${esc(x.nameZh)}<small>${esc(x.nameEn)}</small></div></div>${badge(x.status)}</div>
+          <div class="info">${esc(x.tower)}・${esc(x.room)}<br>${ymd(x.ci)} ${esc(D.cfg.checkin)} → ${ymd(x.co)} ${esc(D.cfg.checkout)}（${x.nights} 晚）</div>
+          ${x.code ? `<div class="code">訂房代號 ${esc(x.code)}</div>` : ''}</div>`
+      : `<div class="card"><div class="row"><div><div class="sub">🚗 ${esc(x.id)}・${esc(x.type)}</div><div class="name">${esc(x.nameZh)}<small>${esc(x.nameEn)}</small></div></div>${badge(x.status)}</div>
+          <div class="info">航班 <b>${esc(x.flight)}</b>・${x.pax} 位<br>${x.type === '接機' ? '抵達' : '起飛'} ${dt(x.ftime)}${x.pickup ? '<br>上車 ' + dt(x.pickup) + '・VIP LOBBY' : ''}</div>
+          ${x.code ? `<div class="code">訂車代號 ${esc(x.code)}</div>` : ''}</div>`).join('')
+      : '<div class="empty">還沒有預訂紀錄</div>';
+  }
+  function tab(n) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === n));
+    ['cust', 'recs'].forEach(p => $('p-' + p).classList.toggle('on', p === n));
+  }
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => tab(t.dataset.tab));
+  $('q').oninput = renderRecs;
+  $('reload').onclick = () => load(true);
+
+  function open(html) { $('sheet').innerHTML = html; $('mask').classList.add('on'); }
+  function close() { $('mask').classList.remove('on'); }
+  $('mask').onclick = e => { if (e.target === $('mask')) close(); };
+  function seg(el, vals, cur, onPick, label) {
+    el.innerHTML = vals.map(v => `<button type="button" data-v="${esc(v)}" class="${String(v) === String(cur) ? 'on' : ''}">${esc(label ? label(v) : v)}</button>`).join('');
+    el.onclick = e => { const b = e.target.closest('button'); if (!b) return; [...el.children].forEach(x => x.classList.toggle('on', x === b)); onPick(b.dataset.v); };
+  }
+
+  function roomForm(uid) {
+    const c = cust(uid), F = { tower: '', room: '', people: 0 };
+    const towers = (D.cfg.towers || []).filter(t => (c.rooms[t] || []).length);
+    open(`<h2>幫 ${esc(c.nameZh)} 訂房</h2><div class="sub">${esc(c.nameEn)}・會員 ${esc(c.memberId)}</div>
+      <label class="f">樓</label><div class="seg" id="fT"></div>
+      <label class="f">房型</label><div class="seg" id="fR"><div class="sub">請先選樓</div></div>
+      <div class="row2"><div><label class="f">入住日期</label><input type="date" id="fCi" min="${D.cfg.today}"></div>
+        <div><label class="f">退房日期</label><input type="date" id="fCo" min="${D.cfg.today}"></div></div>
+      <label class="f">人數</label><div class="seg" id="fP"></div>
+      <div class="err" id="fErr"></div>
+      <button class="btn" id="go">送出訂房需求</button><button class="btn ghost" id="back">取消</button>`);
+    seg($('fT'), towers, '', v => { F.tower = v; F.room = ''; seg($('fR'), c.rooms[v] || [], '', r => F.room = r); });
+    seg($('fP'), Array.from({ length: D.cfg.maxRoomPeople || 2 }, (_, i) => i + 1), '', v => F.people = Number(v), v => v + ' 位');
+    $('fCi').onchange = () => { const v = $('fCi').value; if (v) { $('fCo').min = addDays(v, 1); if (!$('fCo').value || $('fCo').value <= v) $('fCo').value = addDays(v, 1); } };
+    $('back').onclick = close;
+    $('go').onclick = () => submit('agentSubmitRoom', { uid, tower: F.tower, room: F.room, ci: $('fCi').value, co: $('fCo').value, people: F.people });
+  }
+  function carForm(uid) {
+    const c = cust(uid), F = { type: '', pax: 1 };
+    open(`<h2>幫 ${esc(c.nameZh)} 訂車</h2><div class="sub">${esc(c.nameEn)}・會員 ${esc(c.memberId)}</div>
+      <label class="f">接機／送機</label><div class="seg" id="fType"></div>
+      <label class="f">航班號碼</label><input type="text" id="fFl" placeholder="例如 BR160" style="text-transform:uppercase" autocomplete="off">
+      <label class="f" id="fFtL">班機時間</label><input type="datetime-local" id="fFt">
+      <div id="fPkW" hidden><label class="f">預計上車時間（VIP LOBBY）</label><input type="datetime-local" id="fPk"></div>
+      <label class="f">上車人數</label><input type="number" id="fPax" min="1" max="${D.cfg.maxCarPax || 10}" value="1">
+      <div class="err" id="fErr"></div>
+      <button class="btn" id="go">送出訂車需求</button><button class="btn ghost" id="back">取消</button>`);
+    seg($('fType'), ['接機', '送機'], '', v => { F.type = v; $('fFtL').textContent = v === '接機' ? '班機抵達時間' : '班機起飛時間'; $('fPkW').hidden = v !== '送機'; });
+    $('fFt').onchange = () => { if (F.type === '送機' && $('fFt').value && !$('fPk').value) { const d = new Date($('fFt').value); d.setHours(d.getHours() - 3); const p = n => String(n).padStart(2, '0'); $('fPk').value = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; } };
+    $('back').onclick = close;
+    $('go').onclick = () => submit('agentSubmitCar', { uid, type: F.type, flight: $('fFl').value, ftime: $('fFt').value, pickup: $('fPk').value, pax: $('fPax').value });
+  }
+  async function submit(fn, d) {
+    const b = $('go'); b.disabled = true; b.textContent = '送出中…'; $('fErr').style.display = 'none';
+    try { const r = await call(fn, d); Object.assign(D, r.data); render(); close(); toast(r.msg); }
+    catch (e) { $('fErr').textContent = e.message; $('fErr').style.display = 'block'; b.disabled = false; b.textContent = '再送一次'; }
+  }
+  $('custList').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.room) roomForm(b.dataset.room);
+    else if (b.dataset.car) carForm(b.dataset.car);
+    else if (b.dataset.see) { $('q').value = cust(b.dataset.see).memberId || cust(b.dataset.see).nameZh || ''; tab('recs'); renderRecs(); }
+  };
+  async function load(t) {
+    try { Object.assign(D, await call('agentInit')); render(); if (t) toast('已更新'); }
+    catch (e) { $('custList').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  }
+  load();
+</script>
+</body>
+</html>
