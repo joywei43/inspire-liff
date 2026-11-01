@@ -1564,12 +1564,14 @@ function dailyNoonReport() {
   const b = birthdayReminder_(todayYmd_()); if (b) pushStaff_(b);
 }
 
-/** 小幫手「未來預訂」：還沒退房的訂房（含住宿中），依入住日排序。格式：會員ID _ MM/DD ~ MM/DD _ 房型代號 */
+/** 小幫手「未來預訂」：還沒退房的訂房（含住宿中），依入住日排序。格式：會員ID _ 姓名 _ MM/DD ~ MM/DD _ 房型代號 */
 function futureBookingsMsgs_(today) {
   const rooms = liveRooms_().filter(function (b) { return b.co > today; })
     .sort(function (a, b) { return a.ci < b.ci ? -1 : a.ci > b.ci ? 1 : (a.memberId < b.memberId ? -1 : 1); });
   if (!rooms.length) return [text_('目前沒有未來的預訂。')];
-  const lines = rooms.map(function (b) { return (b.memberId || '-') + ' _ ' + shortMD_(b.ci) + ' ~ ' + shortMD_(b.co) + ' _ ' + roomCode_(b.tower, b.room); });
+  const names = {};
+  readRows_(SHEETS.CUST).forEach(function (c) { if (c['會員ID'] && !names[c['會員ID']]) names[c['會員ID']] = c['英文姓名'] || c['中文姓名'] || ''; });
+  const lines = rooms.map(function (b) { return (b.memberId || '-') + ' _ ' + (b.nameEn || b.nameZh || names[b.memberId] || '（未填姓名）') + ' _ ' + shortMD_(b.ci) + ' ~ ' + shortMD_(b.co) + ' _ ' + roomCode_(b.tower, b.room); });
   const msgs = [], per = 80;
   for (let i = 0; i < lines.length && msgs.length < 5; i += per) {
     msgs.push(text_((i === 0 ? '📋 未來預訂（共 ' + rooms.length + ' 筆）\n\n' : '') + lines.slice(i, i + per).join('\n')));
