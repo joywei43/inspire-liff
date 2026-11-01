@@ -124,6 +124,7 @@
   .sheet input[type=text]{margin-bottom:14px}
   .chk{display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:14px}
   .chk input{width:20px;height:20px}
+  [hidden]{display:none!important}
   .acc{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
   .acc.a1{background:var(--warn-bg);color:var(--warn)} .acc.a2{background:#EDE7F6;color:var(--plum-2)} .acc.a3{background:var(--gold-soft);color:var(--gold-text)}
   .mnote{margin-top:6px;font-size:13px;color:var(--plum-2);background:var(--gold-soft);border-radius:8px;padding:6px 10px;white-space:pre-wrap}
@@ -229,6 +230,12 @@
     <div class="tool">
       <input type="search" id="memQ" placeholder="搜尋姓名、英文名、會員ID、LINE 名稱">
       <button id="memRefresh" title="重新整理">↻</button>
+    </div>
+    <div class="card" id="teamCard" hidden>
+      <h3 style="margin:0 0 8px">團隊成員</h3>
+      <div id="teamList"></div>
+      <div class="tool" style="margin:10px 0 0"><input type="text" id="teamName" placeholder="新增助理名稱（例如 Aaron）" autocomplete="off"><button id="teamAdd" title="新增">＋</button></div>
+      <div class="hint" style="margin:8px 0 0">助理可以看所有客人和訂單、填訂房代號、安排車、新增或取消訂房；不能改會員設定、AGENT、團隊。</div>
     </div>
     <div class="card" id="agentCard">
       <h3 style="margin:0 0 8px">AGENT</h3>
@@ -603,7 +610,7 @@
         <div class="rec-top">
           <div><div class="rec-name">${registered(c) || c.pre ? esc(c.nameZh) : esc(c.lineName || '(未命名)')}<small>${esc(c.nameEn)}</small>${accTag(c)}</div>
             <div class="rec-sub">${registered(c) ? '會員 ' + esc(c.memberId) : esc(custSub(c))}${c.pre ? '' : '・LINE ' + esc(c.lineName)}${c.tier ? '・' + esc(c.tier) : ''}${c.agent ? '・AGENT ' + esc(c.agent) : ''}</div></div>
-          <span class="badge">${c.status === '已封鎖' ? '已封鎖' : '編輯'}</span>
+          <span class="badge">${c.status === '已封鎖' ? '已封鎖' : isAdmin() ? '編輯' : '查看'}</span>
         </div>
         ${c.note ? `<div class="mnote">📝 ${esc(c.note)}</div>` : ''}
       </div>`).join('')
@@ -611,6 +618,20 @@
   }
   function editMember(uid) {
     const c = S.customers.find(x => x.uid === uid); if (!c) return;
+    if (!isAdmin()) {
+      openSheet(`<h2>${esc(c.nameZh || c.lineName || '客人')}</h2><p>${esc(c.nameEn)}${c.lineName ? '・LINE ' + esc(c.lineName) : ''}</p>
+        <div class="sum">
+          <div><span>會員ID</span>${esc(c.memberId || '-')}</div>
+          <div><span>可訂房型</span>${esc((ACC[c.access] || ACC['豪華客房']).label)}</div>
+          <div><span>Casino Tier</span>${esc(c.tier || 'Royal')}</div>
+          <div><span>所屬 AGENT</span>${esc(c.agent || '-')}</div>
+        </div>
+        ${c.note ? `<div class="mnote">📝 ${esc(c.note)}</div>` : ''}
+        <p class="hint">會員設定只有小魏可以修改。</p>
+        <div class="btns"><button class="btn ghost" id="back">關閉</button></div>`);
+      $('back').onclick = closeSheet;
+      return;
+    }
     let acc = ACC[c.access] ? c.access : '豪華客房';
     openSheet(`<h2>${registered(c) ? esc(c.nameZh) : esc(c.lineName || '客人')}</h2>
       <p>${esc(c.nameEn)}・LINE ${esc(c.lineName)}</p>
@@ -636,6 +657,53 @@
     $('back').onclick = closeSheet;
     $('go').onclick = () => runReg($('go'), 'apiSaveMember', [c.uid, { access: acc, nameZh: $('mZh').value.trim(), nameEn: $('mEn').value.trim(), memberId: $('mId').value.trim(), tier: $('mTier').querySelector('.on').dataset.v, note: $('mNote').value, agent: $('mAgent').value }]);
   }
+
+  /* ---------- 角色與團隊 ---------- */
+  const isAdmin = () => (S.role || '管理') === '管理';
+  function applyRole() {
+    $('teamCard').hidden = !isAdmin();
+    $('agentCard').hidden = !isAdmin();
+    $('bulkBtn').hidden = !isAdmin();
+    $('staffName').textContent = STAFF + (isAdmin() ? '' : '（助理）');
+  }
+  function renderTeam() {
+    if (!isAdmin()) return;
+    $('teamList').innerHTML = (S.team || []).map(t => `
+      <div class="rec" style="margin-bottom:8px;${t.on ? '' : 'opacity:.55'}">
+        <div class="rec-top"><div><div class="rec-name">${esc(t.name)}<small>${t.role}</small></div>
+          <div class="rec-sub">${t.bound ? '✓ 已綁定小幫手' : '未綁定小幫手（收不到通知）'}${t.on ? '' : '・已停用'}</div></div></div>
+        ${t.role === '助理' ? `<div class="rec-act">
+          <button data-tm="link" data-name="${esc(t.name)}">複製後台網址</button>
+          <button data-tm="code" data-name="${esc(t.name)}">小幫手綁定碼</button>
+          <button class="del" data-tm="${t.on ? 'off' : 'on'}" data-name="${esc(t.name)}">${t.on ? '停用' : '啟用'}</button></div>` : ''}
+      </div>`).join('');
+  }
+  function showStaffCode(name, code) {
+    const t = (S.team || []).find(x => x.name === name) || {};
+    openSheet(`<h2>${esc(name)}</h2>
+      <p>把下面兩樣私下傳給 ${esc(name)}：</p>
+      <label class="f">① 後台網址（加到書籤）</label>
+      <textarea readonly onclick="this.select()" style="min-height:64px;font-size:12px">${esc(t.link || '')}</textarea>
+      <label class="f">② 加「小魏訂房小幫手」（@715vhfuj）好友後傳</label>
+      <div style="font-size:24px;font-weight:800;letter-spacing:2px;background:var(--gold-soft);padding:12px;border-radius:10px;text-align:center">${esc(code)}</div>
+      <p class="hint">綁定碼 24 小時內有效、只能用一次。網址等同鑰匙，請不要外流；停用後連結和通知立即失效。</p>
+      <div class="btns"><button class="btn ghost" id="back">關閉</button></div>`);
+    $('back').onclick = closeSheet;
+  }
+  $('teamAdd').onclick = async () => {
+    const name = $('teamName').value.trim(); if (!name) return;
+    try { const r = await call('apiAddStaff', name); S.team = r.team; $('teamName').value = ''; renderTeam(); showStaffCode(name, r.code); }
+    catch (e) { toast(e.message, true); }
+  };
+  $('teamList').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-tm]'); if (!b) return;
+    const name = b.dataset.name, t = (S.team || []).find(x => x.name === name) || {};
+    try {
+      if (b.dataset.tm === 'link') { await navigator.clipboard.writeText(t.link || ''); toast('已複製 ' + name + ' 的後台網址'); }
+      else if (b.dataset.tm === 'code') { const r = await call('apiStaffBindCode', name); showStaffCode(name, r.code); }
+      else { const r = await call('apiSetStaffOn', name, b.dataset.tm === 'on'); S.team = r.team; renderTeam(); toast(r.msg); }
+    } catch (err) { toast(err.message, true); }
+  });
 
   /* ---------- AGENT ---------- */
   function renderAgents() {
@@ -856,6 +924,7 @@
     try {
       const r = await call('apiRefresh');
       S.customers = r.customers; S.rooms = r.rooms; S.cars = r.cars; S.cfg = r.cfg; S.agents = r.agents || []; renderAgents();
+      S.role = r.role || '管理'; S.team = r.team || []; applyRole(); renderTeam();
       setQuota(r.quota);
       seg($('tower'), S.cfg.TOWERS, 'tower');
       roomSeg();

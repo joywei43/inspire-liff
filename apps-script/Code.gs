@@ -56,7 +56,7 @@ const HEADERS = {
            '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
            '來源', '處理人', '建立時間', '安排時間', 'LINE userId', '通知訊息ID', '備註', '訂車代號'],
-  '使用者': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId'],
+  '使用者': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId', '角色'],
   '紀錄': ['時間', '來源', '內容'],
   'AGENT': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId', '備註'],
   '活動': ['顯示', '排序', '標題', '說明', '海報網址', '連結', '更新時間'],
@@ -636,7 +636,7 @@ function apiPreBookBatch(key, text) {
 }
 
 function apiBulkAddMembers(key, text, agent) {
-  const staff = auth_(key);
+  const staff = adminAuth_(key);
   agent = String(agent || '').trim();
   if (agent && !readRows_(SHEETS.AGENT).some(function (a) { return a['名稱'] === agent; })) throw new Error('找不到 AGENT「' + agent + '」。');
   const added = [], updated = [], bad = [];
@@ -835,7 +835,7 @@ function apiBind(key, uid, memberId) {
 
 /** 會員管理：可訂房型、Casino Tier、後台備註、會員ID */
 function apiSaveMember(key, uid, d) {
-  const staff = auth_(key);
+  const staff = adminAuth_(key);
   d = d || {};
   const access = ACCESS[d.access] ? d.access : DEFAULT_ACCESS;
   const tier = String(d.tier || '').trim().slice(0, 30);
@@ -899,7 +899,7 @@ function listAgents_() {
   });
 }
 function apiAddAgent(key, name) {
-  auth_(key);
+  adminAuth_(key);
   name = String(name || '').trim().slice(0, 30);
   if (!name) throw new Error('請輸入 AGENT 名稱。');
   const code = withLock_(function () {
@@ -911,13 +911,13 @@ function apiAddAgent(key, name) {
   return { ok: true, msg: '已新增 AGENT ' + name, code: code, agents: listAgents_() };
 }
 function apiAgentBindCode(key, name) {
-  auth_(key);
+  adminAuth_(key);
   const f = findRow_(SHEETS.AGENT, '名稱', name);
   if (!f) throw new Error('找不到這個 AGENT。');
   return { ok: true, code: makeBindCode_(f.data['金鑰']) };
 }
 function apiSetAgentOn(key, name, on) {
-  auth_(key);
+  adminAuth_(key);
   const f = findRow_(SHEETS.AGENT, '名稱', name);
   if (!f) throw new Error('找不到這個 AGENT。');
   setCells_(SHEETS.AGENT, f.row, { '啟用': on ? '是' : '否' });
@@ -1758,6 +1758,8 @@ function apiInit(key) {
   const staff = auth_(key);
   return {
     staff: staff.name,
+    role: staff.role,
+    team: staff.role === '管理' ? listStaff_() : [],
     customers: listCustomers_(),
     rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80),
     cars: listRows_(SHEETS.CAR, rowToCar_, 80),
@@ -1937,7 +1939,47 @@ function staffByHelperUid_(uid) {
 function findStaff_(key) {
   if (!key || String(key).length < 20) return null;
   const r = readRows_(SHEETS.STAFF).filter(function (x) { return x['金鑰'] === key && isOn_(x['啟用']); })[0];
-  return r ? { name: r['名稱'] } : null;
+  return r ? { name: r['名稱'], role: r['角色'] === '助理' ? '助理' : '管理' } : null;
+}
+/** 只有管理者（小魏）能用的功能：會員設定、AGENT、團隊 */
+function adminAuth_(key) {
+  const s = auth_(key);
+  if (s.role !== '管理') throw new Error('這個功能只有小魏可以使用。');
+  return s;
+}
+
+/* ----- 團隊成員（助理）：處理訂單，不能改會員設定、AGENT ----- */
+function listStaff_() {
+  return readRows_(SHEETS.STAFF).map(function (r) {
+    return { name: r['名稱'], role: r['角色'] === '助理' ? '助理' : '管理', on: isOn_(r['啟用']), bound: !!r['小幫手 userId'], link: staffLink_(r['金鑰']) };
+  });
+}
+function apiAddStaff(key, name) {
+  adminAuth_(key);
+  name = String(name || '').trim().slice(0, 20);
+  if (!name) throw new Error('請輸入名稱。');
+  const code = withLock_(function () {
+    if (readRows_(SHEETS.STAFF).some(function (r) { return r['名稱'] === name; })) throw new Error('已經有叫「' + name + '」的成員。');
+    const k = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
+    const head = HEADERS[SHEETS.STAFF], o = { '名稱': name, '金鑰': k, '啟用': '是', '建立時間': now_(), '角色': '助理' };
+    appendText_(sheet_(SHEETS.STAFF), head.map(function (h) { return o[h] || ''; }));
+    return makeBindCode_(k);
+  });
+  return { ok: true, code: code, team: listStaff_() };
+}
+function apiStaffBindCode(key, name) {
+  adminAuth_(key);
+  const f = findRow_(SHEETS.STAFF, '名稱', name);
+  if (!f) throw new Error('找不到這位成員。');
+  return { ok: true, code: makeBindCode_(f.data['金鑰']) };
+}
+function apiSetStaffOn(key, name, on) {
+  const me = adminAuth_(key);
+  if (name === me.name) throw new Error('不能停用自己。');
+  const f = findRow_(SHEETS.STAFF, '名稱', name);
+  if (!f) throw new Error('找不到這位成員。');
+  setCells_(SHEETS.STAFF, f.row, { '啟用': on ? '是' : '否' });
+  return { ok: true, msg: name + (on ? ' 已啟用' : ' 已停用（連結和通知都會停止）'), team: listStaff_() };
 }
 
 function auth_(key) {
