@@ -575,7 +575,72 @@ function carNotice_(c, mode) {
  * 照片存在你的 Google 雲端硬碟（不公開），護照照片在綁定後自動移到垃圾桶
  * ============================================================ */
 
-const REG = { NONE: '', WAIT_BIND: '待綁定', APPLYING: '辦卡中', BOUND: '已綁定' };
+const REG = { NONE: '', WAIT_BIND: '待綁定', APPLYING: '辦卡中', BOUND: '已綁定', PRE: '預先建立' };
+
+/* ----- 預先建立的會員（還沒加 LINE）：用「M:會員ID」當代號 ----- */
+/** 綁定時，把預先建立的同會員ID資料（AGENT、房型權限、備註…）併到這位客人，並刪掉預先建立的那列 */
+function mergePreMember_(uid, memberId, row, c) {
+  try {
+    withLock_(function () {
+      const rows = readRows_(SHEETS.CUST);
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const p = rows[i];
+        if (p['會員ID'] !== memberId || p['LINE userId'] || p['登記狀態'] !== REG.PRE) continue;
+        const upd = {};
+        ['AGENT', '可訂房型', 'Casino Tier', '後台備註', '中文姓名', '英文姓名'].forEach(function (h) { if (p[h] && !c[h]) { upd[h] = p[h]; c[h] = p[h]; } });
+        if (Object.keys(upd).length) setCells_(SHEETS.CUST, row, upd);
+        sheet_(SHEETS.CUST).deleteRow(i + 2);
+        if (i + 2 < row) row--;
+      }
+    });
+  } catch (err) { log_('合併預先會員', err.message); }
+}
+function custKey_(r) { return r['LINE userId'] || ('M:' + r['會員ID']); }
+function findCustByKey_(key) {
+  key = String(key || '');
+  if (key.indexOf('M:') === 0) {
+    const mid = key.slice(2), rows = readRows_(SHEETS.CUST);
+    for (let i = rows.length - 1; i >= 0; i--) if (rows[i]['會員ID'] === mid && !rows[i]['LINE userId']) return { row: i + 2, data: rows[i] };
+    return null;
+  }
+  return findRow_(SHEETS.CUST, 'LINE userId', key);
+}
+/** 英文姓名整理成護照格式：lin,sheng li → LIN SHENG LI */
+function normEn_(s) { return String(s || '').replace(/[,，.\/]+/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase(); }
+
+/** 批次預先建立會員：每行「會員ID 中文姓名 英文姓名」，可指定所屬 AGENT */
+function apiBulkAddMembers(key, text, agent) {
+  const staff = auth_(key);
+  agent = String(agent || '').trim();
+  if (agent && !readRows_(SHEETS.AGENT).some(function (a) { return a['名稱'] === agent; })) throw new Error('找不到 AGENT「' + agent + '」。');
+  const added = [], updated = [], bad = [];
+  withLock_(function () {
+    const head = HEADERS[SHEETS.CUST], sh = sheet_(SHEETS.CUST);
+    String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean).forEach(function (line) {
+      const m = line.match(/^([A-Za-z]*\d[A-Za-z0-9-]{2,29})\s*([㐀-鿿豈-﫿]{1,10})?\s*(.*)$/);
+      if (!m) { bad.push(line); return; }
+      const mid = m[1].toUpperCase(), zh = (m[2] || '').trim(), en = normEn_(m[3]);
+      if (en && !/^[A-Z][A-Z '-]{1,59}$/.test(en)) { bad.push(line); return; }
+      const rows = readRows_(SHEETS.CUST);
+      const idx = rows.map(function (r) { return r['會員ID']; }).lastIndexOf(mid);
+      if (idx >= 0) {
+        const r = rows[idx], upd = {};
+        if (agent) upd['AGENT'] = agent;
+        if (zh && !r['中文姓名']) upd['中文姓名'] = zh;
+        if (en && !r['英文姓名']) upd['英文姓名'] = en;
+        if (Object.keys(upd).length) setCells_(SHEETS.CUST, idx + 2, upd);
+        updated.push(mid + ' ' + (r['中文姓名'] || zh));
+        return;
+      }
+      const o = { '會員ID': mid, '中文姓名': zh, '英文姓名': en, '狀態': '未加入', '加入時間': now_(), '登記狀態': REG.PRE, 'AGENT': agent, '綁定人': staff.name };
+      appendText_(sh, head.map(function (h) { return o[h] || ''; }));
+      added.push(mid + ' ' + zh + ' ' + en);
+    });
+  });
+  log_('會員管理', staff.name + ' 批次新增 ' + added.length + ' 位' + (agent ? '（AGENT ' + agent + '）' : ''));
+  return { ok: true, added: added, updated: updated, bad: bad, customers: listCustomers_(), agents: listAgents_(),
+    msg: '新增 ' + added.length + ' 位' + (updated.length ? '、更新 ' + updated.length + ' 位' : '') + (bad.length ? '、' + bad.length + ' 行看不懂' : '') };
+}
 const DOC = { card: '會員卡', passport: '護照' };
 
 function validateRegistration_(d) {
@@ -666,6 +731,7 @@ function bindMember_(uid, memberId, staffName) {
     return '';
   });
   if (err) return { ok: false, msg: err };
+  mergePreMember_(uid, memberId, row, c);
 
   // 護照只用來代辦會員卡，綁定後移到垃圾桶
   if (c['證件類型'] === DOC.passport && CFG.TRASH_PASSPORT_AFTER_BIND && c['證件檔案ID']) {
@@ -750,7 +816,7 @@ function apiSaveMember(key, uid, d) {
   const note = String(d.note || '').trim().slice(0, 500);
   const memberId = String(d.memberId || '').trim().toUpperCase();
   const msg = withLock_(function () {
-    const found = findRow_(SHEETS.CUST, 'LINE userId', uid);
+    const found = findCustByKey_(uid);
     if (!found) throw new Error('找不到這位客人，請重新整理。');
     const upd = { '可訂房型': access, 'Casino Tier': tier, '後台備註': note };
     if (d.agent !== undefined) {
@@ -835,45 +901,47 @@ function apiSetAgentOn(key, name, on) {
 /** AGENT 網頁：他底下的客人＋預訂 */
 function agentInit(key) {
   const ag = agentAuth_(key);
-  const mine = readRows_(SHEETS.CUST).filter(function (c) { return c['AGENT'] === ag.name && c['LINE userId']; });
-  const uids = mine.map(function (c) { return c['LINE userId']; });
+  const mine = readRows_(SHEETS.CUST).filter(function (c) { return c['AGENT'] === ag.name && (c['LINE userId'] || c['會員ID']); });
+  const uids = mine.map(function (c) { return c['LINE userId']; }).filter(Boolean);
+  const mids = mine.filter(function (c) { return !c['LINE userId']; }).map(function (c) { return c['會員ID']; });
+  const owns = function (r) { return r['LINE userId'] ? uids.indexOf(r['LINE userId']) >= 0 : mids.indexOf(r['會員ID']) >= 0; };
   const since = addDays_(todayYmd_(), -60);
-  const pub = function (x, kind) { const o = kind === 'room' ? publicRoom_(x) : publicCar_(x); o.uid = x['LINE userId']; o.source = x['來源']; return o; };
+  const pub = function (x, kind) { const o = kind === 'room' ? publicRoom_(x) : publicCar_(x); o.uid = custKey_(x); o.source = x['來源']; return o; };
   return {
     agent: ag.name,
     customers: mine.map(function (c) {
-      return { uid: c['LINE userId'], nameZh: c['中文姓名'] || c['LINE名稱'], nameEn: c['英文姓名'], memberId: c['會員ID'],
-        registered: isRegistered_(c), tier: c['Casino Tier'] || CFG.REQ.TIER, rooms: allowedRooms_(c) };
+      return { uid: custKey_(c), nameZh: c['中文姓名'] || c['LINE名稱'], nameEn: c['英文姓名'], memberId: c['會員ID'],
+        registered: isRegistered_(c), pre: !c['LINE userId'], tier: c['Casino Tier'] || CFG.REQ.TIER, rooms: allowedRooms_(c) };
     }),
-    rooms: readRows_(SHEETS.ROOM).filter(function (r) { return uids.indexOf(r['LINE userId']) >= 0 && r['退房日期'] >= since; }).map(function (r) { return pub(r, 'room'); }).reverse(),
-    cars: readRows_(SHEETS.CAR).filter(function (r) { return uids.indexOf(r['LINE userId']) >= 0 && String(r['航班時間']).slice(0, 10) >= since; }).map(function (r) { return pub(r, 'car'); }).reverse(),
+    rooms: readRows_(SHEETS.ROOM).filter(function (r) { return owns(r) && r['退房日期'] >= since; }).map(function (r) { return pub(r, 'room'); }).reverse(),
+    cars: readRows_(SHEETS.CAR).filter(function (r) { return owns(r) && String(r['航班時間']).slice(0, 10) >= since; }).map(function (r) { return pub(r, 'car'); }).reverse(),
     cfg: { towers: CFG.TOWERS, maxRoomPeople: CFG.MAX_ROOM_PEOPLE, maxCarPax: CFG.MAX_CAR_PAX, checkin: CFG.CHECKIN_TIME, checkout: CFG.CHECKOUT_TIME, today: todayYmd_() },
   };
 }
-function agentCust_(ag, uid) {
-  const f = findRow_(SHEETS.CUST, 'LINE userId', uid);
+function agentCust_(ag, key) {
+  const f = findCustByKey_(key);
   if (!f || f.data['AGENT'] !== ag.name) throw new Error('這位客人不在您的名單裡。');
-  if (!isRegistered_(f.data)) throw new Error('這位客人還沒完成會員卡綁定，請先請他在 LINE 登記。');
+  if (f.data['LINE userId'] && !isRegistered_(f.data)) throw new Error('這位客人還在等小魏綁定會員卡，綁定後就可以下單。');
+  if (!f.data['會員ID']) throw new Error('這位客人還沒有會員ID。');
   return f.data;
 }
 function agentSubmitRoom(key, d) {
   const ag = agentAuth_(key);
   const cust = agentCust_(ag, d.uid);
-  const b = createRoomRequest_(d.uid, cust, validateCustomerRoom_(d, cust), 'AGENT：' + ag.name);
+  const b = createRoomRequest_(cust['LINE userId'] || '', cust, validateCustomerRoom_(d, cust), 'AGENT：' + ag.name);
   return { ok: true, msg: '已送出訂房需求 ' + b.id + '，小魏確認後會通知您和客人。', data: agentInit(key) };
 }
 function agentSubmitCar(key, d) {
   const ag = agentAuth_(key);
   const cust = agentCust_(ag, d.uid);
-  const c = createCarRequest_(d.uid, cust, validateCustomerCar_(d), 'AGENT：' + ag.name);
+  const c = createCarRequest_(cust['LINE userId'] || '', cust, validateCustomerCar_(d), 'AGENT：' + ag.name);
   return { ok: true, msg: '已送出' + c.type + '需求 ' + c.id + '，小魏安排好會通知您和客人。', data: agentInit(key) };
 }
 
 /** 推播給客人所屬的 AGENT（AGENT 有綁定小幫手才會收到） */
-function notifyAgent_(uid, text) {
+function notifyAgent_(uid, text, memberId) {
   try {
-    if (!uid) return;
-    const c = findRow_(SHEETS.CUST, 'LINE userId', uid);
+    const c = uid ? findRow_(SHEETS.CUST, 'LINE userId', uid) : (memberId ? findCustByKey_('M:' + memberId) : null);
     const name = c && c.data['AGENT'];
     if (!name) return;
     const a = readRows_(SHEETS.AGENT).filter(function (x) { return x['名稱'] === name && isOn_(x['啟用']) && x['小幫手 userId']; })[0];
@@ -883,9 +951,9 @@ function notifyAgent_(uid, text) {
   } catch (err) { log_('AGENT 通知', err.message); }
 }
 function notifyAgentNew_(kind, x) {
-  notifyAgent_(x.uid, kind === 'room'
+  notifyAgent_(x.uid, (kind === 'room'
     ? '🏨 新訂房需求 ' + x.id + '\n' + x.nameZh + ' ' + x.nameEn + '\n' + x.tower + '・' + x.room + '\n' + fmtYmd_(x.ci) + ' → ' + fmtYmd_(x.co) + '\n小魏確認後會再通知您。'
-    : '🚗 新' + x.type + '需求 ' + x.id + '\n' + x.nameZh + ' ' + x.nameEn + '\n航班 ' + x.flight + '・' + fmtDT_(x.ftime) + '\n小魏安排好會再通知您。');
+    : '🚗 新' + x.type + '需求 ' + x.id + '\n' + x.nameZh + ' ' + x.nameEn + '\n航班 ' + x.flight + '・' + fmtDT_(x.ftime) + '\n小魏安排好會再通知您。'), x.memberId);
 }
 
 function apiReject(key, uid, reason) {
@@ -1565,13 +1633,14 @@ function confirmRoom_(id, code, staffName) {
     return '';
   });
   if (err) return { ok: false, msg: err };
+  if (!b.uid) notifyAgent_('', '✅ 訂房已確認 ' + id + '\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room + '\n' + fmtYmd_(b.ci) + ' → ' + fmtYmd_(b.co) + '\n訂房代號：' + code, b.memberId);
   if (!b.uid) return { ok: true, msg: '✅ 已存下 ' + id + ' 的訂房代號 ' + code + '。會員 ' + b.memberId + ' 還沒綁定 LINE，綁定後就會在「我的預約」看到。' };
   const res = push_('c', b.uid, [roomNotice_(b, 'confirmed')]);
   if (!res.ok) {
     setCells_(SHEETS.ROOM, row, { '狀態': ST.FAILED, '備註': res.error });
     return { ok: false, msg: '⚠️ 已存下代號，但傳給客人失敗：' + res.error + '\n可到填單網頁按「重試」。' };
   }
-  notifyAgent_(b.uid, '✅ 訂房已確認 ' + id + '\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room + '\n' + fmtYmd_(b.ci) + ' → ' + fmtYmd_(b.co) + '\n訂房代號：' + code);
+  notifyAgent_(b.uid, '✅ 訂房已確認 ' + id + '\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room + '\n' + fmtYmd_(b.ci) + ' → ' + fmtYmd_(b.co) + '\n訂房代號：' + code, b.memberId);
   return { ok: true, msg: '✅ 已把訂房代號 ' + code + ' 傳給 ' + b.nameZh + '（' + id + '，' + fmtMD_(b.ci) + ' 入住）。' };
 }
 
@@ -1598,12 +1667,16 @@ function arrangeCar_(id, staffName, code) {
     return '';
   });
   if (err) return { ok: false, msg: err };
+  if (!c.uid) {
+    notifyAgent_('', '✅ ' + c.type + '已安排 ' + id + '\n' + c.nameZh + ' ' + c.nameEn + '\n航班 ' + c.flight + '・' + fmtDT_(c.ftime) + (c.code ? '\n訂車代號：' + c.code : ''), c.memberId);
+    return { ok: true, msg: '✅ 已標記 ' + id + ' 安排好' + (code ? '（代號 ' + code + '）' : '') + '。會員 ' + c.memberId + ' 還沒綁定 LINE，綁定後就會在「我的預約」看到。' };
+  }
   const res = push_('c', c.uid, [carNotice_(c, 'arranged')]);
   if (!res.ok) {
     setCells_(SHEETS.CAR, row, { '狀態': ST.FAILED, '備註': res.error });
     return { ok: false, msg: '⚠️ 已標記安排好，但通知客人失敗：' + res.error };
   }
-  notifyAgent_(c.uid, '✅ ' + c.type + '已安排 ' + id + '\n' + c.nameZh + ' ' + c.nameEn + '\n航班 ' + c.flight + '・' + fmtDT_(c.ftime) + (c.code ? '\n訂車代號：' + c.code : ''));
+  notifyAgent_(c.uid, '✅ ' + c.type + '已安排 ' + id + '\n' + c.nameZh + ' ' + c.nameEn + '\n航班 ' + c.flight + '・' + fmtDT_(c.ftime) + (c.code ? '\n訂車代號：' + c.code : ''), c.memberId);
   if (mode === 'code') return { ok: true, msg: '✅ 已補上 ' + id + ' 的訂車代號 ' + code + '，並通知 ' + c.nameZh + '。' };
   return { ok: true, msg: '✅ 已通知 ' + c.nameZh + '：' + c.type + '車子安排好了（' + id + '，' + c.flight + (code ? '，代號 ' + code : '') + '）。' };
 }
@@ -1614,7 +1687,7 @@ function cancelItem_(kind, id, staffName, notify) {
   if (!found) return { ok: false, msg: '找不到 ' + id + '。' };
   if (found.data['狀態'] === ST.CANCELLED) return { ok: false, msg: id + ' 已經取消了。' };
   setCells_(sheetName, found.row, { '狀態': ST.CANCELLED, '處理人': staffName, '備註': '由 ' + staffName + ' 於 ' + now_() + ' 取消' });
-  notifyAgent_(found.data['LINE userId'], '❌ 已取消 ' + id + '\n' + found.data['中文姓名'] + ' ' + found.data['英文姓名'] + '\n' + (kind === 'room' ? found.data['樓'] + '・' + found.data['房型'] + '・' + fmtYmd_(found.data['入住日期']) + ' 入住' : found.data['類型'] + ' ' + found.data['航班']));
+  notifyAgent_(found.data['LINE userId'], '❌ 已取消 ' + id + '\n' + found.data['中文姓名'] + ' ' + found.data['英文姓名'] + '\n' + (kind === 'room' ? found.data['樓'] + '・' + found.data['房型'] + '・' + fmtYmd_(found.data['入住日期']) + ' 入住' : found.data['類型'] + ' ' + found.data['航班']), found.data['會員ID']);
   if (!notify || !found.data['LINE userId']) return { ok: true, msg: '已取消 ' + id + (found.data['LINE userId'] ? '（沒有通知客人）。' : '（客人還沒綁定 LINE，不用通知）。') };
   const item = kind === 'room' ? rowToRoom_(found.data) : rowToCar_(found.data);
   const wasPending = found.data['狀態'] === ST.ROOM_PENDING || found.data['狀態'] === ST.CAR_PENDING;
@@ -1773,12 +1846,12 @@ function isRegistered_(c) {
 function listCustomers_() {
   return readRows_(SHEETS.CUST).map(function (r) {
     return {
-      uid: r['LINE userId'], lineName: r['LINE名稱'], memberId: r['會員ID'], nameZh: r['中文姓名'], nameEn: r['英文姓名'],
+      uid: custKey_(r), pre: !r['LINE userId'], lineName: r['LINE名稱'], memberId: r['會員ID'], nameZh: r['中文姓名'], nameEn: r['英文姓名'],
       status: r['狀態'] || '好友', last: r['最後訊息'] || r['加入時間'] || '',
       regStatus: r['登記狀態'] || '', docType: r['證件類型'] || '', docUrl: r['證件檔案'] || '', regAt: r['登記時間'] || '',
       access: ACCESS[r['可訂房型']] ? r['可訂房型'] : '全部', tier: r['Casino Tier'] || '', note: r['後台備註'] || '', agent: r['AGENT'] || '',
     };
-  }).filter(function (c) { return c.uid; })
+  }).filter(function (c) { return c.uid && c.uid !== 'M:'; })
     .sort(function (a, b) { return a.last < b.last ? 1 : -1; });
 }
 

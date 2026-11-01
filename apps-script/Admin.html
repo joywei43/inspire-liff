@@ -235,6 +235,7 @@
       <div id="agentList"></div>
       <div class="tool" style="margin:10px 0 0"><input type="text" id="agentName" placeholder="新增 AGENT 名稱" autocomplete="off"><button id="agentAdd" title="新增">＋</button></div>
     </div>
+    <button class="btn ghost" id="bulkBtn" style="margin:0 0 12px">＋ 批次新增會員（還沒加 LINE 也可以）</button>
     <div id="memList"><div class="loading">載入中…</div></div>
   </section>
 
@@ -335,13 +336,14 @@
     if (registered(c)) return `${c.nameEn}・會員 ${c.memberId}`;
     if (c.regStatus === '待綁定') return '已上傳會員卡，等待綁定';
     if (c.regStatus === '辦卡中') return '已上傳護照，等待辦卡';
+    if (c.pre) return `會員 ${c.memberId}・預先建立，還沒加入 LINE`;
     return '還沒登記會員卡（LINE 顯示名稱）';
   }
   const initial = c => esc((c.nameZh || c.lineName || '?').trim().charAt(0));
 
   function renderCustList() {
     const q = $('custQ').value.trim().toLowerCase();
-    const list = S.customers.filter(c => !q || [c.nameZh, c.nameEn, c.memberId, c.lineName].some(v => String(v || '').toLowerCase().includes(q)));
+    const list = S.customers.filter(c => !c.pre && (!q || [c.nameZh, c.nameEn, c.memberId, c.lineName].some(v => String(v || '').toLowerCase().includes(q))));
     $('custList').innerHTML = list.length
       ? list.slice(0, 80).map(c => `
         <div class="opt ${c.status === '已封鎖' ? 'blocked' : ''}" data-uid="${esc(c.uid)}">
@@ -597,8 +599,8 @@
     $('memList').innerHTML = list.length ? list.map(c => `
       <div class="rec" data-mem="${esc(c.uid)}" style="cursor:pointer">
         <div class="rec-top">
-          <div><div class="rec-name">${registered(c) ? esc(c.nameZh) : esc(c.lineName || '(未命名)')}<small>${esc(c.nameEn)}</small>${accTag(c)}</div>
-            <div class="rec-sub">${registered(c) ? '會員 ' + esc(c.memberId) : esc(custSub(c))}・LINE ${esc(c.lineName)}${c.tier ? '・' + esc(c.tier) : ''}${c.agent ? '・AGENT ' + esc(c.agent) : ''}</div></div>
+          <div><div class="rec-name">${registered(c) || c.pre ? esc(c.nameZh) : esc(c.lineName || '(未命名)')}<small>${esc(c.nameEn)}</small>${accTag(c)}</div>
+            <div class="rec-sub">${registered(c) ? '會員 ' + esc(c.memberId) : esc(custSub(c))}${c.pre ? '' : '・LINE ' + esc(c.lineName)}${c.tier ? '・' + esc(c.tier) : ''}${c.agent ? '・AGENT ' + esc(c.agent) : ''}</div></div>
           <span class="badge">${c.status === '已封鎖' ? '已封鎖' : '編輯'}</span>
         </div>
         ${c.note ? `<div class="mnote">📝 ${esc(c.note)}</div>` : ''}
@@ -659,6 +661,30 @@
       <div class="btns"><button class="btn ghost" id="back">關閉</button></div>`);
     $('back').onclick = closeSheet;
   }
+  $('bulkBtn').onclick = () => {
+    openSheet(`<h2>批次新增會員</h2>
+      <p>一行一位：會員ID 中文姓名 英文姓名。英文大小寫、逗號會自動整理成護照格式（LIN SHENG LI）。<br>客人之後加 LINE、綁定同一個會員ID 時，資料會自動併過去。</p>
+      <textarea id="bulkTxt" style="min-height:180px" placeholder="80040407 林勝利 lin,sheng li&#10;80040404 陳婉欣 chen,wan hsin"></textarea>
+      <label class="f" for="bulkAg">所屬 AGENT</label>
+      <select id="bulkAg" style="width:100%;height:46px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:#fff">
+        <option value="">（沒有）</option>${(S.agents || []).filter(a => a.on).map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('')}
+      </select>
+      <div class="btns" style="margin-top:14px"><button class="btn" id="go">新增</button><button class="btn ghost" id="back">取消</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = async () => {
+      const b = $('go'); b.disabled = true; b.textContent = '新增中…';
+      try {
+        const r = await call('apiBulkAddMembers', $('bulkTxt').value, $('bulkAg').value);
+        S.customers = r.customers; S.agents = r.agents; renderAgents(); renderMem(); renderCustList();
+        openSheet(`<h2>${esc(r.msg)}</h2>
+          ${r.added.length ? `<p><b>新增</b><br>${r.added.map(esc).join('<br>')}</p>` : ''}
+          ${r.updated.length ? `<p><b>已存在（已更新 AGENT／補上姓名）</b><br>${r.updated.map(esc).join('<br>')}</p>` : ''}
+          ${r.bad.length ? `<p style="color:var(--bad)"><b>看不懂，請檢查</b><br>${r.bad.map(esc).join('<br>')}</p>` : ''}
+          <div class="btns"><button class="btn ghost" id="back">關閉</button></div>`);
+        $('back').onclick = closeSheet;
+      } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = '新增'; }
+    };
+  };
   $('agentAdd').onclick = async () => {
     const name = $('agentName').value.trim(); if (!name) return;
     try { const r = await call('apiAddAgent', name); S.agents = r.agents; $('agentName').value = ''; renderAgents(); showAgentCode(name, r.code); }

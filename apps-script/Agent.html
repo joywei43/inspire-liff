@@ -94,10 +94,10 @@
       const up = D.rooms.filter(r => r.uid === c.uid && r.status !== '已取消' && r.co >= today).length;
       return `<div class="card">
         <div class="row"><div><div class="name">${esc(c.nameZh)}<small>${esc(c.nameEn)}</small></div>
-          <div class="sub">${c.registered ? '會員 ' + esc(c.memberId) + '・' + esc(c.tier) : '還沒完成會員卡綁定'}${up ? '・即將入住 ' + up + ' 筆' : ''}</div></div></div>
+          <div class="sub">${c.registered || c.pre ? '會員 ' + esc(c.memberId) + '・' + esc(c.tier) : '還在等小魏綁定會員卡'}${c.pre ? '・還沒加入 LINE' : ''}${up ? '・即將入住 ' + up + ' 筆' : ''}</div></div></div>
         <div class="acts">
-          <button class="main" data-room="${esc(c.uid)}" ${c.registered ? '' : 'disabled'}>幫他訂房</button>
-          <button data-car="${esc(c.uid)}" ${c.registered ? '' : 'disabled'}>幫他訂車</button>
+          <button class="main" data-room="${esc(c.uid)}" ${c.registered || c.pre ? '' : 'disabled'}>幫他訂房</button>
+          <button data-car="${esc(c.uid)}" ${c.registered || c.pre ? '' : 'disabled'}>幫他訂車</button>
           <button data-see="${esc(c.uid)}">看預訂</button>
         </div></div>`;
     }).join('') : '<div class="empty">目前還沒有客人掛在您名下。<br>請小魏在後台把客人設定給您。</div>';
