@@ -122,6 +122,7 @@ function 測試連線() { testLine(); }
 function 新增使用者_小魏() { addStaffNamed_('小魏'); }
 function 新增使用者_助理() { addStaffNamed_('助理'); }
 function 新增使用者_公務機() { addStaffNamed_('公務機'); }
+function 設定每日提醒() { setupDailyTriggers(); }
 function 查看填單連結() { listStaffLinks(); }
 
 function setupSheets() {
@@ -1164,6 +1165,8 @@ function handleHelper_(ev) {
   }
 
   if (/^(待處理|清單|列表|list)$/i.test(txt)) { reply(pendingList_()); return; }
+  if (/^(今日入住|今天入住|今天誰入住)$/.test(txt)) { reply([text_(checkinReport_(todayYmd_()) || '今天沒有預計入住的客人。')]); return; }
+  if (/^(明日提醒|訂車提醒|明天訂車)$/.test(txt)) { reply([text_(carReminder_(addDays_(todayYmd_(), 1)) || '明天入住、退房的客人都已經訂好車了 👍')]); return; }
 
   // 4) 只有一筆待處理時，直接回覆也可以
   const pend = pendingItems_();
@@ -1284,12 +1287,96 @@ function attachPreBookings_(uid, memberId, cust) {
   return n;
 }
 
+/* ============================================================
+ * 每日提醒（推播給所有綁定小幫手的使用者）
+ *   12:00 今天預計入住的客人＋接送機狀況
+ *   21:00 明天入住還沒訂接機、明天退房還沒訂送機
+ * 在編輯器執行「設定每日提醒」一次即可。
+ * ============================================================ */
+function setupDailyTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (['dailyNoonReport', 'dailyCarReminder'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('dailyNoonReport').timeBased().everyDays(1).atHour(12).nearMinute(0).inTimezone(TZ).create();
+  ScriptApp.newTrigger('dailyCarReminder').timeBased().everyDays(1).atHour(21).nearMinute(0).inTimezone(TZ).create();
+  notify_('✅ 每日提醒設定好了：\n・每天 12:00 通知今天入住的客人\n・每天 21:00 提醒明天還沒訂車的訂房');
+}
+
+function dailyNoonReport() { const t = checkinReport_(todayYmd_()); if (t) pushStaff_(t); }
+function dailyCarReminder() { const t = carReminder_(addDays_(todayYmd_(), 1)); if (t) pushStaff_(t); }
+
+function pushStaff_(text) {
+  readRows_(SHEETS.STAFF).filter(function (s) { return isOn_(s['啟用']) && s['小幫手 userId']; }).forEach(function (s) {
+    const res = push_('h', s['小幫手 userId'], [text_(text)]);
+    if (!res.ok) log_('每日提醒', s['名稱'] + '：' + res.error);
+  });
+}
+
+function shortMD_(ymd) { const p = ymdParts_(ymd); return p[1] + '/' + p[2]; }
+
+/** 找這筆訂房對應的接機（入住當天或前一天抵達）、送機（退房當天或隔天起飛） */
+function carsForRoom_(b, cars) {
+  const mine = cars.filter(function (c) {
+    return c['狀態'] !== ST.CANCELLED && ((b.memberId && c['會員ID'] === b.memberId) || (b.uid && c['LINE userId'] === b.uid));
+  });
+  const d = function (c) { return String(c['航班時間']).slice(0, 10); };
+  return {
+    arrive: mine.filter(function (c) { return c['類型'] === '接機' && (d(c) === b.ci || d(c) === addDays_(b.ci, -1)); })[0] || null,
+    depart: mine.filter(function (c) { return c['類型'] === '送機' && (d(c) === b.co || d(c) === addDays_(b.co, 1)); })[0] || null,
+  };
+}
+
+function roomLine_(b) {
+  return (b.memberId || '-') + ' ' + (b.nameEn || b.nameZh || '（未綁定）') + '  ' + shortMD_(b.ci) + '~' + shortMD_(b.co) + ' ' +
+    roomCode_(b.tower, b.room) + '（' + (b.code || '代號未填') + '）';
+}
+function carLabel_(c) {
+  if (!c) return '';
+  return c['航班'] + ' ' + String(c['航班時間']).slice(11, 16) + (c['狀態'] === ST.CAR_PENDING ? '（待安排）' : '');
+}
+
+function liveRooms_() {
+  return readRows_(SHEETS.ROOM).filter(function (r) { return r['狀態'] !== ST.CANCELLED; }).map(rowToRoom_);
+}
+
+/** 12:00：今天預計入住 */
+function checkinReport_(day) {
+  const rooms = liveRooms_().filter(function (b) { return b.ci === day; });
+  if (!rooms.length) return '';
+  const cars = readRows_(SHEETS.CAR);
+  return '🏨 今天（' + shortMD_(day) + '）預計有以下客戶入住\n\n' + rooms.map(function (b) {
+    const k = carsForRoom_(b, cars);
+    let line;
+    if (!k.arrive && !k.depart) line = '⚠ 此訂單尚未安排接送機';
+    else line = '抵達 ' + (k.arrive ? carLabel_(k.arrive) : '未安排') + ' / 離境 ' + (k.depart ? carLabel_(k.depart) : '未安排') +
+      (!k.arrive ? '\n⚠ 此訂單僅安排送機' : !k.depart ? '\n⚠ 此訂單僅安排接機' : '');
+    return roomLine_(b) + '\n' + line;
+  }).join('\n\n');
+}
+
+/** 21:00：明天入住沒訂接機、明天退房沒訂送機（有訂就不提醒） */
+function carReminder_(day) {
+  const rooms = liveRooms_(), cars = readRows_(SHEETS.CAR);
+  const notDone = function (c) { return !c || c['狀態'] === ST.CAR_PENDING; };
+  const noArrive = rooms.filter(function (b) { return b.ci === day && notDone(carsForRoom_(b, cars).arrive); });
+  const noDepart = rooms.filter(function (b) { return b.co === day && notDone(carsForRoom_(b, cars).depart); });
+  const why = function (b, k, label) {
+    const c = carsForRoom_(b, cars)[k];
+    return c ? '⚠ 客人已申請' + label + '（' + c['編號'] + ' ' + c['航班'] + '），還沒安排好' : '⚠ 此筆預訂還沒訂車（' + label + '）';
+  };
+  if (!noArrive.length && !noDepart.length) return '';
+  const out = ['⏰ 訂車提醒（明天 ' + shortMD_(day) + '）'];
+  if (noArrive.length) out.push('🛬 明天入住，還沒訂接機：\n' + noArrive.map(function (b) { return roomLine_(b) + '\n' + why(b, 'arrive', '接機'); }).join('\n\n'));
+  if (noDepart.length) out.push('🛫 明天退房，還沒訂送機：\n' + noDepart.map(function (b) { return roomLine_(b) + '\n' + why(b, 'depart', '送機'); }).join('\n\n'));
+  return out.join('\n\n');
+}
+
 function pendingList_(withHelp) {
   const p = pendingItems_();
   const regs = pendingRegs_();
   const msgs = [];
   if (withHelp) {
-    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・傳「待處理」查看所有待處理'));
+    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・每天 12:00 通知今天入住、21:00 提醒明天還沒訂的車；也可以傳「今日入住」「明日提醒」隨時查\n・傳「待處理」查看所有待處理'));
   }
   if (!p.rooms.length && !p.cars.length && !regs.length) { msgs.push(text_('目前沒有待處理的事項 👍')); return msgs; }
   const bubbles = regs.map(staffRegBubble_)
