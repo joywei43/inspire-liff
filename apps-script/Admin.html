@@ -333,13 +333,13 @@
     return registered(c) ? `${esc(c.nameZh)}` : `${esc(c.lineName || '(未命名)')}<span class="tag">未登記</span>`;
   }
   const ACC = {
-    '全部': { lv: 3, label: '全部房型', sub: '可以訂所有房型，包含迎仕柏套房' },
-    '套房': { lv: 2, label: '最高到一般套房', sub: '豪華客房、單間套房、輝映／海洋套房；不能訂迎仕柏套房' },
+    '全部': { lv: 3, label: '全部房型', sub: '可以訂所有房型，包含迎仕柏套房、Villa' },
+    '套房': { lv: 2, label: '最高到一般套房', sub: '豪華客房、單間套房、輝映／海洋套房；不能訂迎仕柏套房、Villa' },
     '豪華客房': { lv: 1, label: '只限豪華客房', sub: '只能訂豪華大床房、豪華雙床房；不能訂套房' },
   };
   // 預設只限豪華客房；有開放套房的才標示
   const accTag = c => c.access && c.access !== '豪華客房' ? `<span class="acc a${ACC[c.access].lv}">${esc(ACC[c.access].label)}</span>` : '';
-  const roomLv = r => /^豪華/.test(r) ? 1 : /^迎仕柏/.test(r) ? 3 : 2;
+  const roomLv = r => /^豪華/.test(r) ? 1 : /^迎仕柏|別墅|villa/i.test(r) ? 3 : 2;
   function custSub(c) {
     if (c.status === '已封鎖') return '已封鎖官方帳號';
     if (registered(c)) return `${c.nameEn}・會員 ${c.memberId}`;

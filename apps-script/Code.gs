@@ -19,7 +19,7 @@ const CFG = {
   TOWERS: ['輝映樓', '海洋樓'],          // 官網名稱：輝映樓 SUN TOWER、海洋樓 OCEAN TOWER（要加翠林樓就加進來）
   // 各樓可訂的房型（名稱照官網）
   ROOMS: {
-    '輝映樓': ['豪華大床房', '豪華雙床房', '單間套房特大床', '輝映套房特大床', '輝映套房雙床', '迎仕柏套房特大床', '迎仕柏套房雙床'],
+    '輝映樓': ['豪華大床房', '豪華雙床房', '單間套房特大床', '輝映套房特大床', '輝映套房雙床', '迎仕柏套房特大床', '迎仕柏套房雙床', '輝映別墅 Villa'],
     '海洋樓': ['豪華大床房', '豪華雙床房', '海洋套房特大床', '海洋套房雙床', '迎仕柏套房特大床'],
   },
   MAX_ROOM_PEOPLE: 2,
@@ -45,6 +45,7 @@ const CFG = {
     '輝映套房特大床': 'SNK', '輝映套房雙床': 'SNT', '海洋套房特大床': 'SNK', '海洋套房雙床': 'SNT',
     '單間套房特大床': 'SSK',
     '迎仕柏套房特大床': 'SIK', '迎仕柏套房雙床': 'SIT',
+    '輝映別墅 Villa': 'VIL',
   },
 };
 
@@ -1065,7 +1066,7 @@ function meResponse_(uid, extra) {
     },
     rooms: rooms, cars: cars,
     cfg: {
-      towers: CFG.TOWERS, rooms: allowedRooms_(c), maxRoomPeople: CFG.MAX_ROOM_PEOPLE, maxCarPax: CFG.MAX_CAR_PAX,
+      towers: CFG.TOWERS, rooms: CFG.ROOMS, allowed: allowedRooms_(c), maxRoomPeople: CFG.MAX_ROOM_PEOPLE, maxCarPax: CFG.MAX_CAR_PAX,
       checkin: CFG.CHECKIN_TIME, checkout: CFG.CHECKOUT_TIME, noteDepart: CFG.NOTE_DEPART, noteArrive: CFG.NOTE_ARRIVE,
       today: today,
     },
@@ -1094,7 +1095,7 @@ function publicCar_(r) {
 
 /* ----- 每位客人可訂的房型等級（「客人」工作表的「可訂房型」：全部／套房／豪華客房） ----- */
 const ACCESS = { '全部': 3, '套房': 2, '豪華客房': 1 };
-function roomLevel_(room) { return /^豪華/.test(room) ? 1 : /^迎仕柏/.test(room) ? 3 : 2; }
+function roomLevel_(room) { return /^豪華/.test(room) ? 1 : /^迎仕柏|別墅|villa/i.test(room) ? 3 : 2; }
 const DEFAULT_ACCESS = '豪華客房';   // 沒特別設定的客人：只能訂豪華客房
 function accessLevel_(cust) { return ACCESS[String((cust && cust['可訂房型']) || '').trim()] || ACCESS[DEFAULT_ACCESS]; }
 function allowedRooms_(cust) {
