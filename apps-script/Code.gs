@@ -1571,12 +1571,26 @@ function futureBookingsMsgs_(today) {
   if (!rooms.length) return [text_('目前沒有未來的預訂。')];
   const names = {};
   readRows_(SHEETS.CUST).forEach(function (c) { if (c['會員ID'] && !names[c['會員ID']]) names[c['會員ID']] = c['英文姓名'] || c['中文姓名'] || ''; });
-  const lines = rooms.map(function (b) { return (b.memberId || '-') + ' _ ' + (b.nameEn || b.nameZh || names[b.memberId] || '（未填姓名）') + ' _ ' + shortMD_(b.ci) + ' ~ ' + shortMD_(b.co) + ' _ ' + roomCode_(b.tower, b.room); });
-  const msgs = [], per = 80;
+  const lines = rooms.map(function (b) { return (b.memberId || '-') + ' _ ' + (b.nameEn || b.nameZh || names[b.memberId] || '（未填姓名）') + ' _ ' + b.ci.slice(5, 10).replace('-', '/') + ' ~ ' + b.co.slice(5, 10).replace('-', '/') + ' _ ' + roomCode_(b.tower, b.room); });
+  // 依入住月份分段：【11月】【12月】【2027年1月】…
+  const grouped = [], thisYear = today.slice(0, 4);
+  let curMonth = '';
+  rooms.forEach(function (b, i) {
+    const ym = b.ci.slice(0, 7);
+    if (ym !== curMonth) {
+      curMonth = ym;
+      const cnt = rooms.filter(function (x) { return x.ci.slice(0, 7) === ym; }).length;
+      const label = (ym.slice(0, 4) === thisYear ? '' : ym.slice(0, 4) + '年') + Number(ym.slice(5, 7)) + '月';
+      grouped.push((grouped.length ? '\n' : '') + '【' + label + '】' + cnt + ' 筆');
+    }
+    grouped.push(lines[i]);
+  });
+  lines.length = 0; Array.prototype.push.apply(lines, grouped);
+  const msgs = [], per = 90;
   for (let i = 0; i < lines.length && msgs.length < 5; i += per) {
     msgs.push(text_((i === 0 ? '📋 未來預訂（共 ' + rooms.length + ' 筆）\n\n' : '') + lines.slice(i, i + per).join('\n')));
   }
-  if (lines.length > per * 5) msgs[4].text += '\n\n…還有 ' + (lines.length - per * 5) + ' 筆，請到後台「所有紀錄」查看';
+  if (lines.length > per * 5) msgs[4].text += '\n\n…還有更多，請到後台「所有紀錄」查看';
   return msgs;
 }
 
