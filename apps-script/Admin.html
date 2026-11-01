@@ -125,7 +125,7 @@
   .chk{display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:14px}
   .chk input{width:20px;height:20px}
   .acc{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
-  .acc.a1{background:var(--warn-bg);color:var(--warn)} .acc.a2{background:#EDE7F6;color:var(--plum-2)}
+  .acc.a1{background:var(--warn-bg);color:var(--warn)} .acc.a2{background:#EDE7F6;color:var(--plum-2)} .acc.a3{background:var(--gold-soft);color:var(--gold-text)}
   .mnote{margin-top:6px;font-size:13px;color:var(--plum-2);background:var(--gold-soft);border-radius:8px;padding:6px 10px;white-space:pre-wrap}
   textarea{font:inherit;width:100%;min-height:88px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;resize:vertical;background:#fff}
   .segv{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
@@ -330,7 +330,8 @@
     '套房': { lv: 2, label: '最高到一般套房', sub: '豪華客房、單間套房、輝映／海洋套房；不能訂迎仕柏套房' },
     '豪華客房': { lv: 1, label: '只限豪華客房', sub: '只能訂豪華大床房、豪華雙床房；不能訂套房' },
   };
-  const accTag = c => c.access && c.access !== '全部' ? `<span class="acc a${ACC[c.access].lv}">${esc(ACC[c.access].label)}</span>` : '';
+  // 預設只限豪華客房；有開放套房的才標示
+  const accTag = c => c.access && c.access !== '豪華客房' ? `<span class="acc a${ACC[c.access].lv}">${esc(ACC[c.access].label)}</span>` : '';
   const roomLv = r => /^豪華/.test(r) ? 1 : /^迎仕柏/.test(r) ? 3 : 2;
   function custSub(c) {
     if (c.status === '已封鎖') return '已封鎖官方帳號';
@@ -409,7 +410,7 @@
     $('nights').textContent = d.ci && d.co ? (n >= 1 ? `共 ${n} 晚` : '⚠ 退房日期要晚於入住日期') : '';
     $('preview').innerHTML = noticeHtml(d);
     const p = problems(d);
-    const over = S.picked && S.room && roomLv(S.room) > (ACC[S.picked.access] || ACC['全部']).lv;
+    const over = S.picked && S.room && roomLv(S.room) > (ACC[S.picked.access] || ACC['豪華客房']).lv;
     if (over) $('nights').textContent += `${$('nights').textContent ? '　' : ''}⚠ 這位客人設定為「${ACC[S.picked.access].label}」，確定要幫他訂這個房型？`;
     $('submit').disabled = p.length > 0 || S.busy;
     $('submit').textContent = S.busy ? '傳送中…' : (p.length ? `還缺：${p.slice(0, 3).join('、')}${p.length > 3 ? '…' : ''}` : '確認並傳送給客人');
@@ -610,7 +611,7 @@
   }
   function editMember(uid) {
     const c = S.customers.find(x => x.uid === uid); if (!c) return;
-    let acc = ACC[c.access] ? c.access : '全部';
+    let acc = ACC[c.access] ? c.access : '豪華客房';
     openSheet(`<h2>${registered(c) ? esc(c.nameZh) : esc(c.lineName || '客人')}</h2>
       <p>${esc(c.nameEn)}・LINE ${esc(c.lineName)}</p>
       <div class="row2">

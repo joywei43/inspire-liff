@@ -837,7 +837,7 @@ function apiBind(key, uid, memberId) {
 function apiSaveMember(key, uid, d) {
   const staff = auth_(key);
   d = d || {};
-  const access = ACCESS[d.access] ? d.access : '全部';
+  const access = ACCESS[d.access] ? d.access : DEFAULT_ACCESS;
   const tier = String(d.tier || '').trim().slice(0, 30);
   const note = String(d.note || '').trim().slice(0, 500);
   const memberId = String(d.memberId || '').trim().toUpperCase();
@@ -1085,7 +1085,8 @@ function publicCar_(r) {
 /* ----- 每位客人可訂的房型等級（「客人」工作表的「可訂房型」：全部／套房／豪華客房） ----- */
 const ACCESS = { '全部': 3, '套房': 2, '豪華客房': 1 };
 function roomLevel_(room) { return /^豪華/.test(room) ? 1 : /^迎仕柏/.test(room) ? 3 : 2; }
-function accessLevel_(cust) { return ACCESS[String((cust && cust['可訂房型']) || '').trim()] || 3; }
+const DEFAULT_ACCESS = '豪華客房';   // 沒特別設定的客人：只能訂豪華客房
+function accessLevel_(cust) { return ACCESS[String((cust && cust['可訂房型']) || '').trim()] || ACCESS[DEFAULT_ACCESS]; }
 function allowedRooms_(cust) {
   const lv = accessLevel_(cust), out = {};
   Object.keys(CFG.ROOMS).forEach(function (t) { out[t] = CFG.ROOMS[t].filter(function (r) { return roomLevel_(r) <= lv; }); });
@@ -1880,7 +1881,7 @@ function listCustomers_() {
       uid: custKey_(r), pre: !r['LINE userId'], lineName: r['LINE名稱'], memberId: r['會員ID'], nameZh: r['中文姓名'], nameEn: r['英文姓名'],
       status: r['狀態'] || '好友', last: r['最後訊息'] || r['加入時間'] || '',
       regStatus: r['登記狀態'] || '', docType: r['證件類型'] || '', docUrl: r['證件檔案'] || '', regAt: r['登記時間'] || '',
-      access: ACCESS[r['可訂房型']] ? r['可訂房型'] : '全部', tier: r['Casino Tier'] || '', note: r['後台備註'] || '', agent: r['AGENT'] || '',
+      access: ACCESS[r['可訂房型']] ? r['可訂房型'] : DEFAULT_ACCESS, tier: r['Casino Tier'] || '', note: r['後台備註'] || '', agent: r['AGENT'] || '',
     };
   }).filter(function (c) { return c.uid && c.uid !== 'M:'; })
     .sort(function (a, b) { return a.last < b.last ? 1 : -1; });
