@@ -609,6 +609,32 @@ function findCustByKey_(key) {
 function normEn_(s) { return String(s || '').replace(/[,，.\/]+/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase(); }
 
 /** 批次預先建立會員：每行「會員ID 中文姓名 英文姓名」，可指定所屬 AGENT */
+/** 後台貼上多筆訂房：每行「會員ID 房型代號 入住~退房 [訂房代號] [備註]」；SHARER 行會併到上一筆的備註 */
+function apiPreBookBatch(key, text) {
+  const staff = auth_(key);
+  const lines = String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+  const done = [], bad = [];
+  let pending = null, sharer = [];
+  const flush = function () {
+    if (!pending) return;
+    if (sharer.length) pending.note = [pending.note].concat(sharer).filter(Boolean).join('；');
+    const r = staffPreBook_(pending, staff.name);
+    (r.ok ? done : bad).push((r.ok ? r.id + ' ' : '') + pending.memberId + ' ' + pending.roomCode + ' ' + shortMD_(pending.ci) + '~' + shortMD_(pending.co) + (r.ok ? '' : '：' + r.msg));
+    pending = null; sharer = [];
+  };
+  lines.forEach(function (l) {
+    if (/^SHARER/i.test(l)) { if (pending) sharer.push(l.replace(/\s+/g, ' ')); return; }
+    const p = parsePreBooking_(l);
+    if (!p) { bad.push(l); return; }
+    if (p.error) { bad.push(l + '：' + p.error); return; }
+    flush();
+    p.via = '後台：';
+    pending = p;
+  });
+  flush();
+  return { ok: true, msg: '建立 ' + done.length + ' 筆' + (bad.length ? '、' + bad.length + ' 筆有問題' : ''), done: done, bad: bad, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80) };
+}
+
 function apiBulkAddMembers(key, text, agent) {
   const staff = auth_(key);
   agent = String(agent || '').trim();
@@ -1397,8 +1423,10 @@ function handleStaffAnswer_(kind, id, txt, staffName) {
  * 預先建立訂房（客人還沒綁定也可以，綁定時自動帶進「我的預約」）
  * 格式：會員ID 房型代號 入住~退房 [訂房代號]，例如「80060456 SSNK 11/27~11/30 RCA950」
  * ============================================================ */
+const ROOM_ALIASES = { ODVT: 'ODNT', ODVK: 'ODNK', SDVT: 'SDNT', SDVK: 'SDNK' };   // 飯店系統另一種寫法
 function codeToRoom_(code) {
   code = String(code || '').toUpperCase();
+  code = ROOM_ALIASES[code] || code;
   let hit = null;
   Object.keys(CFG.ROOMS).forEach(function (t) {
     CFG.ROOMS[t].forEach(function (r) { if (!hit && roomCode_(t, r) === code) hit = { tower: t, room: r }; });
@@ -1423,8 +1451,9 @@ function mdToYmd_(s, after) {
 }
 
 function parsePreBooking_(txt) {
-  const m = String(txt).trim().match(/^([A-Za-z0-9-]*\d[A-Za-z0-9-]*)\s+([SsOo][A-Za-z]{3})\s+((?:\d{4}[\/.])?\d{1,2}[\/.]\d{1,2})\s*[~～\-–—至到]\s*((?:\d{4}[\/.])?\d{1,2}[\/.]\d{1,2})(?:\s+(\S{2,40}))?$/);
+  const m = String(txt).trim().match(/^([A-Za-z0-9-]*\d[A-Za-z0-9-]*)\s+([SsOo][A-Za-z]{3})\s+((?:\d{4}[\/.])?\d{1,2}[\/.]\d{1,2})\s*[~～\-–—至到]\s*((?:\d{4}[\/.])?(?:\d{1,2}[\/.])?\d{1,2})(?:\s+(\S{2,40}))?(?:\s+([\s\S]{1,200}))?$/);
   if (!m) return null;
+  if (/^\d{1,2}$/.test(m[4])) m[4] = m[3].replace(/\d{1,2}$/, '') + m[4];   // 11/13~17 → 11/13~11/17
   const memberId = m[1].toUpperCase();
   if (memberId.length < 4) return null;
   const rc = codeToRoom_(m[2]);
@@ -1434,12 +1463,14 @@ function parsePreBooking_(txt) {
   if (!ci || !co) return { error: '日期看不懂，請用「11/27~11/30」這樣的格式。' };
   const nights = daysBetween_(ci, co);
   if (nights < 1 || nights > 60) return { error: '入住 ' + fmtYmd_(ci) + '、退房 ' + fmtYmd_(co) + '，日期好像不對，請確認。' };
-  return { memberId: memberId, tower: rc.tower, room: rc.room, roomCode: m[2].toUpperCase(), ci: ci, co: co, nights: nights, code: m[5] || '' };
+  return { memberId: memberId, tower: rc.tower, room: rc.room, roomCode: m[2].toUpperCase(), ci: ci, co: co, nights: nights, code: m[5] || '', note: (m[6] || '').trim() };
 }
 
 function staffPreBook_(p, staffName) {
-  const cust = readRows_(SHEETS.CUST).filter(function (x) { return x['會員ID'] === p.memberId && x['登記狀態'] === REG.BOUND; })[0];
-  const uid = cust ? cust['LINE userId'] : '';
+  const all = readRows_(SHEETS.CUST);
+  const bound = all.filter(function (x) { return x['會員ID'] === p.memberId && x['登記狀態'] === REG.BOUND; })[0];
+  const cust = bound || all.filter(function (x) { return x['會員ID'] === p.memberId; })[0];
+  const uid = bound ? bound['LINE userId'] : '';
   let id;
   const err = withLock_(function () {
     if (p.code) {
@@ -1449,7 +1480,7 @@ function staffPreBook_(p, staffName) {
     id = nextId_('R');
     appendText_(sheet_(SHEETS.ROOM), [id, p.code ? ST.ROOM_OK : ST.ROOM_PENDING, p.code, p.memberId,
       cust ? cust['中文姓名'] : '', cust ? cust['英文姓名'] : '', p.tower, p.room, p.ci, p.co, String(p.nights), '',
-      '小幫手：' + staffName, p.code ? staffName : '', now_(), p.code ? now_() : '', uid, '', '']);
+      (p.via || '小幫手：') + staffName, p.code ? staffName : '', now_(), p.code ? now_() : '', uid, '', p.note || '']);
     return '';
   });
   if (err) return { ok: false, msg: err };
@@ -1457,10 +1488,10 @@ function staffPreBook_(p, staffName) {
   if (uid && p.code) {
     const found = findRow_(SHEETS.ROOM, '編號', id);
     const res = push_('c', uid, [roomNotice_(rowToRoom_(found.data), 'confirmed')]);
-    notice = res.ok ? '\n📨 已通知 ' + cust['中文姓名'] : '\n⚠ 通知客人失敗：' + res.error;
+    notice = res.ok ? '\n📨 已通知 ' + bound['中文姓名'] : '\n⚠ 通知客人失敗：' + res.error;
     if (!res.ok) setCells_(SHEETS.ROOM, found.row, { '狀態': ST.FAILED, '備註': res.error });
   }
-  return { ok: true, msg: '✅ 已建立 ' + id + '\n會員 ' + p.memberId + (cust ? '・' + cust['中文姓名'] : '（還沒綁定 LINE，綁定後客人就會在「我的預約」看到）') +
+  return { ok: true, id: id, msg: '✅ 已建立 ' + id + '\n會員 ' + p.memberId + (bound ? '・' + bound['中文姓名'] : '（還沒綁定 LINE，綁定後客人就會在「我的預約」看到）') +
     '\n' + p.tower + '・' + p.room + '（' + p.roomCode + '）\n' + fmtYmd_(p.ci) + ' → ' + fmtYmd_(p.co) + '（' + p.nights + ' 晚）' +
     '\n訂房代號：' + (p.code || '未填，之後傳「' + id + ' 代號」補上') + notice };
 }

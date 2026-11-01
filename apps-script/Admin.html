@@ -235,7 +235,8 @@
       <div id="agentList"></div>
       <div class="tool" style="margin:10px 0 0"><input type="text" id="agentName" placeholder="新增 AGENT 名稱" autocomplete="off"><button id="agentAdd" title="新增">＋</button></div>
     </div>
-    <button class="btn ghost" id="bulkBtn" style="margin:0 0 12px">＋ 批次新增會員（還沒加 LINE 也可以）</button>
+    <button class="btn ghost" id="bulkBtn" style="margin:0 0 8px">＋ 批次新增會員（還沒加 LINE 也可以）</button>
+    <button class="btn ghost" id="preBtn" style="margin:0 0 12px">＋ 貼上已訂好的訂房（多筆）</button>
     <div id="memList"><div class="loading">載入中…</div></div>
   </section>
 
@@ -683,6 +684,25 @@
           <div class="btns"><button class="btn ghost" id="back">關閉</button></div>`);
         $('back').onclick = closeSheet;
       } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = '新增'; }
+    };
+  };
+  $('preBtn').onclick = () => {
+    openSheet(`<h2>貼上已訂好的訂房</h2>
+      <p>一行一筆：<b>會員ID 房型代號 入住~退房 訂房代號</b>（代號可省略）<br>例如 <code>80217335 ODNT 11/13~17 RDC7CE</code><br>下一行寫「SHARER: …」會記在那筆的備註。客人還沒綁定也可以，綁定後自動出現在他的「我的預約」。</p>
+      <textarea id="preTxt" style="min-height:200px" placeholder="80217335 ODNT 11/13~17 RDC7CE&#10;SHARER: 80217336 PAN LI HSIANG"></textarea>
+      <div class="btns" style="margin-top:14px"><button class="btn" id="go">建立</button><button class="btn ghost" id="back">取消</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = async () => {
+      const b = $('go'); b.disabled = true; b.textContent = '建立中…';
+      try {
+        const r = await call('apiPreBookBatch', $('preTxt').value);
+        S.rooms = r.rooms; renderAll();
+        openSheet(`<h2>${esc(r.msg)}</h2>
+          ${r.done.length ? `<p><b>已建立</b><br>${r.done.map(esc).join('<br>')}</p>` : ''}
+          ${r.bad.length ? `<p style="color:var(--bad)"><b>有問題，請檢查</b><br>${r.bad.map(esc).join('<br>')}</p>` : ''}
+          <div class="btns"><button class="btn ghost" id="back">關閉</button></div>`);
+        $('back').onclick = closeSheet;
+      } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = '建立'; }
     };
   };
   $('agentAdd').onclick = async () => {
