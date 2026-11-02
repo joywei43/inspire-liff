@@ -54,7 +54,7 @@ const HEADERS = {
   '客人': ['LINE userId', 'LINE名稱', '會員ID', '中文姓名', '英文姓名', '狀態', '加入時間', '最後訊息', '備註',
           '登記狀態', '證件類型', '證件檔案', '登記時間', '綁定人', '綁定時間', '證件檔案ID', '通知訊息ID', '彈窗 userId', 'Casino Tier', '可訂房型', '後台備註', 'AGENT', '生日'],
   '訂房': ['編號', '狀態', '訂房代號', '會員ID', '中文姓名', '英文姓名', '樓', '房型', '入住日期', '退房日期', '晚數', '人數',
-           '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註'],
+           '來源', '處理人', '建立時間', '確認時間', 'LINE userId', '通知訊息ID', '備註', '改自'],
   '訂車': ['編號', '狀態', '類型', '會員ID', '中文姓名', '英文姓名', '航班', '航班時間', '上車時間', '人數',
            '來源', '處理人', '建立時間', '安排時間', 'LINE userId', '通知訊息ID', '備註', '訂車代號'],
   '使用者': ['名稱', '金鑰', '啟用', '建立時間', '小幫手 userId', '角色', '通知'],
@@ -988,6 +988,30 @@ function agentSubmitRoom(key, d) {
   const b = createRoomRequest_(cust['LINE userId'] || '', cust, validateCustomerRoom_(d, cust), 'AGENT：' + ag.name);
   return { ok: true, msg: '已送出訂房需求 ' + b.id + '，小魏確認後會通知您和客人。', data: agentInit(key) };
 }
+/** AGENT 申請改日期：同房型、新日期 → 送出改期需求；小魏確認新代號後，原本那筆自動取消 */
+function agentChangeRoom(key, id, d) {
+  const ag = agentAuth_(key);
+  const f = findRow_(SHEETS.ROOM, '編號', id);
+  if (!f) throw new Error('找不到 ' + id + '。');
+  const o = f.data;
+  const cust = agentCust_(ag, custKey_(o));
+  if (o['狀態'] === ST.CANCELLED) throw new Error(id + ' 已經取消了。');
+  if (o['退房日期'] <= todayYmd_()) throw new Error(id + ' 已經退房了。');
+  if (readRows_(SHEETS.ROOM).some(function (r) { return r['改自'] === id && r['狀態'] === ST.ROOM_PENDING; })) throw new Error(id + ' 已經有一筆改期需求在處理中了。');
+  const r = validateCustomerRoom_({ tower: o['樓'], room: o['房型'], ci: d.ci, co: d.co, people: parseInt(o['人數'], 10) || 1 }, null);
+  if (r.ci === o['入住日期'] && r.co === o['退房日期']) throw new Error('日期沒有變更。');
+  const b = createRoomRequest_(o['LINE userId'] || '', cust, r, 'AGENT：' + ag.name, o);
+  return { ok: true, msg: '已送出改期需求 ' + b.id + '（' + fmtMD_(r.ci) + '～' + fmtMD_(r.co) + '），小魏改好後原本的 ' + id + ' 會自動取消。', data: agentInit(key) };
+}
+function origLabel_(id) {
+  const f = findRow_(SHEETS.ROOM, '編號', id);
+  if (!f) return id;
+  return id + (f.data['訂房代號'] ? '・' + f.data['訂房代號'] : '') + '\n' + fmtMD_(f.data['入住日期']) + ' → ' + fmtMD_(f.data['退房日期']);
+}
+function changeNote_(o) {
+  return '改期：原 ' + o['編號'] + (o['訂房代號'] ? ' 代號 ' + o['訂房代號'] : '') + '，' + o['入住日期'] + '~' + o['退房日期'];
+}
+
 function agentSubmitCar(key, d) {
   const ag = agentAuth_(key);
   const cust = agentCust_(ag, d.uid);
@@ -1009,7 +1033,7 @@ function notifyAgent_(uid, text, memberId) {
 }
 function notifyAgentNew_(kind, x) {
   notifyAgent_(x.uid, (kind === 'room'
-    ? '🏨 新訂房需求 ' + x.id + '\n' + x.nameZh + ' ' + x.nameEn + '\n' + x.tower + '・' + x.room + '\n' + fmtYmd_(x.ci) + ' → ' + fmtYmd_(x.co) + '\n小魏確認後會再通知您。'
+    ? (x.from ? '🔁 改期需求 ' + x.id + '（原 ' + x.from + '）' : '🏨 新訂房需求 ' + x.id) + '\n' + x.nameZh + ' ' + x.nameEn + '\n' + x.tower + '・' + x.room + '\n' + fmtYmd_(x.ci) + ' → ' + fmtYmd_(x.co) + '\n小魏確認後會再通知您。'
     : '🚗 新' + x.type + '需求 ' + x.id + '\n' + x.nameZh + ' ' + x.nameEn + '\n航班 ' + x.flight + '・' + fmtDT_(x.ftime) + '\n小魏安排好會再通知您。'), x.memberId);
 }
 
@@ -1216,15 +1240,19 @@ function verifyIdToken_(idToken) {
  * 建立需求、通知小幫手
  * ============================================================ */
 
-function createRoomRequest_(uid, cust, d, source) {
+function createRoomRequest_(uid, cust, d, source, orig) {
   const b = {
     uid: uid, memberId: cust['會員ID'], nameZh: cust['中文姓名'], nameEn: cust['英文姓名'],
     tower: d.tower, room: d.room, ci: d.ci, co: d.co, nights: d.nights, people: d.people, code: '',
   };
+  if (orig) {   // 改期：記下原本那筆，確認後自動取消原本的
+    b.from = orig['編號'];
+    b.note = changeNote_(orig);
+  }
   withLock_(function () {
     b.id = nextId_('R');
     appendText_(sheet_(SHEETS.ROOM), [b.id, ST.ROOM_PENDING, '', b.memberId, b.nameZh, b.nameEn, b.tower, b.room,
-      b.ci, b.co, String(b.nights), String(b.people), source, '', now_(), '', uid, '', '']);
+      b.ci, b.co, String(b.nights), String(b.people), source, '', now_(), '', uid, '', b.note || '', b.from || '']);
   });
   b.status = ST.ROOM_PENDING;
   notifyStaff_('room', b, cust);
@@ -1783,23 +1811,28 @@ function confirmRoom_(id, code, staffName) {
     if (!found) return '找不到 ' + id + '。';
     if (found.data['狀態'] === ST.CANCELLED) return id + ' 已經取消了。';
     if (found.data['狀態'] === ST.ROOM_OK) return id + ' 已經由 ' + found.data['處理人'] + ' 確認過了（代號 ' + found.data['訂房代號'] + '）。';
-    const dup = readRows_(SHEETS.ROOM).some(function (r) { return r['訂房代號'] === code && r['狀態'] !== ST.CANCELLED && r['編號'] !== id; });
+    const orig = found.data['改自'];
+    const dup = readRows_(SHEETS.ROOM).some(function (r) { return r['訂房代號'] === code && r['狀態'] !== ST.CANCELLED && r['編號'] !== id && r['編號'] !== orig; });
     if (dup) return '訂房代號「' + code + '」已經用在別筆訂房了，請確認。';
-    setCells_(SHEETS.ROOM, found.row, { '訂房代號': code, '狀態': ST.ROOM_OK, '處理人': staffName, '確認時間': now_(), '備註': '' });
+    setCells_(SHEETS.ROOM, found.row, { '訂房代號': code, '狀態': ST.ROOM_OK, '處理人': staffName, '確認時間': now_(), '備註': orig ? '改期自 ' + orig : '' });
+    if (orig) {   // 改期完成：原本那筆自動取消（不另外通知客人）
+      const o = findRow_(SHEETS.ROOM, '編號', orig);
+      if (o && o.data['狀態'] !== ST.CANCELLED) setCells_(SHEETS.ROOM, o.row, { '狀態': ST.CANCELLED, '處理人': staffName, '備註': '已改期為 ' + id + '（' + now_() + '）' });
+    }
     row = found.row;
     b = rowToRoom_(Object.assign({}, found.data, { '訂房代號': code }));
     return '';
   });
   if (err) return { ok: false, msg: err };
   if (!b.uid) notifyAgent_('', '✅ 訂房已確認 ' + id + '\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room + '\n' + fmtYmd_(b.ci) + ' → ' + fmtYmd_(b.co) + '\n訂房代號：' + code, b.memberId);
-  if (!b.uid) return { ok: true, msg: '✅ 已存下 ' + id + ' 的訂房代號 ' + code + '。會員 ' + b.memberId + ' 還沒綁定 LINE，綁定後就會在「我的預約」看到。' };
+  if (!b.uid) return { ok: true, msg: '✅ 已存下 ' + id + ' 的訂房代號 ' + code + '。' + (b.from ? '原本的 ' + b.from + ' 已自動取消。' : '') + '會員 ' + b.memberId + ' 還沒綁定 LINE，綁定後就會在「我的預約」看到。' };
   const res = push_('c', b.uid, [roomNotice_(b, 'confirmed')]);
   if (!res.ok) {
     setCells_(SHEETS.ROOM, row, { '狀態': ST.FAILED, '備註': res.error });
     return { ok: false, msg: '⚠️ 已存下代號，但傳給客人失敗：' + res.error + '\n可到填單網頁按「重試」。' };
   }
   notifyAgent_(b.uid, '✅ 訂房已確認 ' + id + '\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room + '\n' + fmtYmd_(b.ci) + ' → ' + fmtYmd_(b.co) + '\n訂房代號：' + code, b.memberId);
-  return { ok: true, msg: '✅ 已把訂房代號 ' + code + ' 傳給 ' + b.nameZh + '（' + id + '，' + fmtMD_(b.ci) + ' 入住）。' };
+  return { ok: true, msg: '✅ 已把訂房代號 ' + code + ' 傳給 ' + b.nameZh + '（' + id + '，' + fmtMD_(b.ci) + ' 入住）。' + (b.from ? '\n原本的 ' + b.from + ' 已自動取消。' : '') };
 }
 
 function arrangeCar_(id, staffName, code) {
@@ -2091,6 +2124,7 @@ function rowToRoom_(r) {
     tower: r['樓'], room: r['房型'], ci: r['入住日期'], co: r['退房日期'],
     nights: parseInt(r['晚數'], 10) || daysBetween_(r['入住日期'], r['退房日期']), people: parseInt(r['人數'], 10) || 1,
     source: r['來源'], staff: r['處理人'], created: r['建立時間'], done: r['確認時間'], uid: r['LINE userId'], note: r['備註'],
+    from: r['改自'] || '',
   };
 }
 
@@ -2218,15 +2252,16 @@ function staffRoomBubble_(b, cust) {
   return {
     type: 'bubble', size: 'mega',
     header: { type: 'box', layout: 'vertical', paddingAll: '16px', backgroundColor: C.plum, contents: [
-      { type: 'text', text: '🏨 新訂房需求　' + b.id, color: '#FFFFFF', weight: 'bold', size: 'md' },
+      { type: 'text', text: (b.from ? '🔁 改期需求　' : '🏨 新訂房需求　') + b.id, color: '#FFFFFF', weight: 'bold', size: 'md' },
     ] },
     body: { type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm', contents: [
+      b.from ? row_('原訂房', origLabel_(b.from), { bold: true }) : null,
       row_('客人', [b.nameZh, b.nameEn], { bold: true }),
       row_('會員ID', b.memberId),
       cust && cust['LINE名稱'] ? row_('LINE', cust['LINE名稱']) : null,
       row_('樓／房型', b.tower + '・' + b.room),
-      row_('入住', fmtYmd_(b.ci) + ' ' + CFG.CHECKIN_TIME, { bold: true }),
-      row_('退房', fmtYmd_(b.co) + ' ' + CFG.CHECKOUT_TIME + '（' + b.nights + ' 晚）'),
+      row_(b.from ? '新入住' : '入住', fmtYmd_(b.ci) + ' ' + CFG.CHECKIN_TIME, { bold: true }),
+      row_(b.from ? '新退房' : '退房', fmtYmd_(b.co) + ' ' + CFG.CHECKOUT_TIME + '（' + b.nights + ' 晚）', b.from ? { bold: true } : undefined),
       row_('人數', b.people + ' 位'),
     ].filter(Boolean) },
     footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: [
@@ -2282,7 +2317,9 @@ function patronOf_(x, cust) {
 }
 function roomReqText_(b, cust) {
   const p = patronOf_(b, cust), R = CFG.REQ;
-  return ['Room Req', R.TEAM,
+  const o = b.from ? (findRow_(SHEETS.ROOM, '編號', b.from) || {}).data : null;
+  return [b.from ? 'Room Req (DATE CHANGE)' : 'Room Req', R.TEAM,
+    o ? 'Original Conf# : ' + (o['訂房代號'] || '-') + '  (' + reqDate_(o['入住日期']) + ' - ' + reqDate_(o['退房日期']) + ')' : null,
     'Patron : ' + p.name,
     'Patron MMID : ' + p.mmid,
     'Check- IN : ' + reqDate_(b.ci),
@@ -2294,11 +2331,11 @@ function roomReqText_(b, cust) {
     'Room Post : ' + R.ROOM_POST,
     'Waive Deposit : ' + R.WAIVE_DEPOSIT,
     'Contact Host : ' + R.CONTACT,
-    'Special Request : ' + R.REMARK].join('\n');
+    'Special Request : ' + R.REMARK].filter(function (x) { return x !== null; }).join('\n');
 }
 
 function staffRoomFlex_(b, cust) {
-  return { type: 'flex', altText: '🏨 新訂房需求 ' + b.id + '｜' + b.nameZh + ' ' + fmtMD_(b.ci) + ' 入住', contents: staffRoomBubble_(b, cust) };
+  return { type: 'flex', altText: (b.from ? '🔁 改期需求 ' : '🏨 新訂房需求 ') + b.id + '｜' + b.nameZh + ' ' + fmtMD_(b.ci) + ' 入住', contents: staffRoomBubble_(b, cust) };
 }
 function staffCarFlex_(c, cust) {
   return { type: 'flex', altText: '🚗 新訂車 ' + c.id + '｜' + c.type + ' ' + c.flight + ' ' + c.nameZh, contents: staffCarBubble_(c, cust) };

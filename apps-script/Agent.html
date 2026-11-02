@@ -111,7 +111,8 @@
     $('recList').innerHTML = all.length ? all.map(x => x.k === 'room'
       ? `<div class="card"><div class="row"><div><div class="sub">🏨 ${esc(x.id)}</div><div class="name">${esc(x.nameZh)}<small>${esc(x.nameEn)}</small></div></div>${badge(x.status)}</div>
           <div class="info">${esc(x.tower)}・${esc(x.room)}<br>${ymd(x.ci)} ${esc(D.cfg.checkin)} → ${ymd(x.co)} ${esc(D.cfg.checkout)}（${x.nights} 晚）</div>
-          ${x.code ? `<div class="code">訂房代號 ${esc(x.code)}</div>` : ''}</div>`
+          ${x.code ? `<div class="code">訂房代號 ${esc(x.code)}</div>` : ''}
+          ${x.status !== '已取消' && x.co > D.cfg.today ? `<div class="acts"><button data-chg="${esc(x.id)}">改日期</button></div>` : ''}</div>`
       : `<div class="card"><div class="row"><div><div class="sub">🚗 ${esc(x.id)}・${esc(x.type)}</div><div class="name">${esc(x.nameZh)}<small>${esc(x.nameEn)}</small></div></div>${badge(x.status)}</div>
           <div class="info">航班 <b>${esc(x.flight)}</b>・${x.pax} 位<br>${x.type === '接機' ? '抵達' : '起飛'} ${dt(x.ftime)}${x.pickup ? '<br>上車 ' + dt(x.pickup) + '・VIP LOBBY' : ''}</div>
           ${x.code ? `<div class="code">訂車代號 ${esc(x.code)}</div>` : ''}</div>`).join('')
@@ -150,6 +151,25 @@
     $('back').onclick = close;
     $('go').onclick = () => submit('agentSubmitRoom', { uid, tower: F.tower, room: F.room, ci: $('fCi').value, co: $('fCo').value, people: F.people });
   }
+  function changeForm(id) {
+    const x = D.rooms.find(r => r.id === id); if (!x) return;
+    open(`<h2>改日期 ${esc(x.id)}</h2><div class="sub">${esc(x.nameZh)} ${esc(x.nameEn)}・${esc(x.tower)}・${esc(x.room)}</div>
+      <div class="info" style="margin-top:10px">原本：${ymd(x.ci)} → ${ymd(x.co)}（${x.nights} 晚）${x.code ? '<br>訂房代號 ' + esc(x.code) : ''}</div>
+      <div class="row2"><div><label class="f">新的入住日期</label><input type="date" id="fCi" min="${D.cfg.today}" value="${esc(x.ci)}"></div>
+        <div><label class="f">新的退房日期</label><input type="date" id="fCo" min="${D.cfg.today}" value="${esc(x.co)}"></div></div>
+      <div class="sub" style="margin-top:8px">房型不變。小魏改好後，原本這筆會自動取消、換成新的。</div>
+      <div class="err" id="fErr"></div>
+      <button class="btn" id="go">送出改期需求</button><button class="btn ghost" id="back">取消</button>`);
+    $('fCi').onchange = () => { const v = $('fCi').value; if (v) { $('fCo').min = addDays(v, 1); if (!$('fCo').value || $('fCo').value <= v) $('fCo').value = addDays(v, 1); } };
+    $('back').onclick = close;
+    $('go').onclick = () => submitChange(id);
+  }
+  async function submitChange(id) {
+    const b = $('go'); b.disabled = true; b.textContent = '送出中…'; $('fErr').style.display = 'none';
+    try { const r = await call('agentChangeRoom', id, { ci: $('fCi').value, co: $('fCo').value }); Object.assign(D, r.data); render(); close(); toast(r.msg); }
+    catch (e) { $('fErr').textContent = e.message; $('fErr').style.display = 'block'; b.disabled = false; b.textContent = '再送一次'; }
+  }
+  $('recList').onclick = e => { const b = e.target.closest('button[data-chg]'); if (b) changeForm(b.dataset.chg); };
   function carForm(uid) {
     const c = cust(uid), F = { type: '', pax: 1 };
     open(`<h2>幫 ${esc(c.nameZh)} 訂車</h2><div class="sub">${esc(c.nameEn)}・會員 ${esc(c.memberId)}</div>
