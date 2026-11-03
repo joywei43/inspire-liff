@@ -1003,6 +1003,56 @@ function agentChangeRoom(key, id, d) {
   const b = createRoomRequest_(o['LINE userId'] || '', cust, r, 'AGENT：' + ag.name, o);
   return { ok: true, msg: '已送出改期需求 ' + b.id + '（' + fmtMD_(r.ci) + '～' + fmtMD_(r.co) + '），小魏改好後原本的 ' + id + ' 會自動取消。', data: agentInit(key) };
 }
+/** 改期完成：沿用原訂房代號，新的這筆確認、原本那筆取消；通知 AGENT（不另外傳給客人，客人查「我的預約」就看得到） */
+function confirmChange_(id, staffName) {
+  let b, orig;
+  const err = withLock_(function () {
+    const f = findRow_(SHEETS.ROOM, '編號', id);
+    if (!f) return '找不到 ' + id + '。';
+    if (!f.data['改自']) return id + ' 不是改期需求。';
+    if (f.data['狀態'] !== ST.ROOM_PENDING) return id + ' 已經是「' + f.data['狀態'] + '」' + (f.data['處理人'] ? '（' + f.data['處理人'] + '）' : '') + '，不用再處理。';
+    const o = findRow_(SHEETS.ROOM, '編號', f.data['改自']);
+    orig = o ? o.data : null;
+    const code = orig ? orig['訂房代號'] : '';
+    setCells_(SHEETS.ROOM, f.row, { '訂房代號': code, '狀態': ST.ROOM_OK, '處理人': staffName, '確認時間': now_(), '備註': '改期自 ' + f.data['改自'] });
+    if (o && o.data['狀態'] !== ST.CANCELLED) setCells_(SHEETS.ROOM, o.row, { '狀態': ST.CANCELLED, '處理人': staffName, '備註': '已改期為 ' + id + '（' + now_() + '）' });
+    b = rowToRoom_(Object.assign({}, f.data, { '訂房代號': code }));
+    return '';
+  });
+  if (err) return { ok: false, msg: err };
+  notifyAgent_(b.uid, '✅ 改期完成 ' + id + '（原 ' + b.from + '）\n' + b.nameZh + ' ' + b.nameEn + '\n' + b.tower + '・' + b.room + '\n' + fmtYmd_(b.ci) + ' → ' + fmtYmd_(b.co) + (b.code ? '\n訂房代號：' + b.code : ''), b.memberId);
+  log_('改期', staffName + ' 完成 ' + id + '（原 ' + b.from + '）');
+  return { ok: true, msg: '✅ ' + id + ' 改期完成：' + fmtMD_(b.ci) + '～' + fmtMD_(b.co) + (b.code ? '（代號 ' + b.code + '）' : '') + '，原本的 ' + b.from + ' 已取消，也通知 AGENT 了。' };
+}
+/** 無法改期：這筆需求取消，原訂房不變；把原因告訴 AGENT */
+function rejectChange_(id, reason, staffName) {
+  reason = String(reason || '').trim().slice(0, 200) || '飯店無法安排';
+  let f;
+  const err = withLock_(function () {
+    f = findRow_(SHEETS.ROOM, '編號', id);
+    if (!f) return '找不到 ' + id + '。';
+    if (f.data['狀態'] !== ST.ROOM_PENDING) return id + ' 已經是「' + f.data['狀態'] + '」，不用再處理。';
+    setCells_(SHEETS.ROOM, f.row, { '狀態': ST.CANCELLED, '處理人': staffName, '備註': '無法改期：' + reason });
+    return '';
+  });
+  if (err) return { ok: false, msg: err };
+  const d = f.data;
+  notifyAgent_(d['LINE userId'], '❌ 無法改期 ' + id + '\n' + d['中文姓名'] + ' ' + d['英文姓名'] + '\n想改成 ' + fmtYmd_(d['入住日期']) + ' → ' + fmtYmd_(d['退房日期']) +
+    '\n原因：' + reason + '\n原本的訂房 ' + d['改自'] + ' 維持不變。', d['會員ID']);
+  log_('改期', staffName + ' 無法改期 ' + id + '：' + reason);
+  return { ok: true, msg: '已回覆 ' + id + ' 無法改期（' + reason + '），已通知 AGENT，原訂房 ' + d['改自'] + ' 不變。' };
+}
+function apiChangeDone(key, id) {
+  const staff = auth_(key);
+  const r = confirmChange_(id, staff.name);
+  return { ok: r.ok, msg: r.msg, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80), quota: safeQuota_() };
+}
+function apiChangeReject(key, id, reason) {
+  const staff = auth_(key);
+  const r = rejectChange_(id, reason, staff.name);
+  return { ok: r.ok, msg: r.msg, rooms: listRows_(SHEETS.ROOM, rowToRoom_, 80), quota: safeQuota_() };
+}
+
 function origLabel_(id) {
   const f = findRow_(SHEETS.ROOM, '編號', id);
   if (!f) return id;
@@ -1332,6 +1382,14 @@ function handleHelper_(ev) {
       reply([text_('請輸入 ' + pb.id + '（' + r.data['中文姓名'] + '）的訂房代號：')]);
       return;
     }
+    if (pb.a === 'chgok') { clearState_('h', uid); reply([text_(confirmChange_(pb.id, staff.name).msg)]); return; }
+    if (pb.a === 'chgno') {
+      const r = findRow_(SHEETS.ROOM, '編號', pb.id);
+      if (!r || r.data['狀態'] !== ST.ROOM_PENDING) { reply([text_(pb.id + (r ? ' 已經是「' + r.data['狀態'] + '」，不用再處理。' : ' 找不到。'))]); return; }
+      saveState_('h', uid, { await: 'chgreason', id: pb.id });
+      reply([text_('請傳 ' + pb.id + ' 無法改期的原因（會轉告 AGENT，原訂房 ' + r.data['改自'] + ' 維持不變）：')]);
+      return;
+    }
     if (pb.a === 'codeok') { reply([text_(confirmRoom_(pb.id, pb.code, staff.name).msg)]); return; }
     if (pb.a === 'carok') {
       const r = findRow_(SHEETS.CAR, '編號', pb.id);
@@ -1448,6 +1506,12 @@ function handleHelper_(ev) {
     reply([text_(arrangeCar_(hst.id, staff.name, OK_WORDS.test(txt) ? '' : txt).msg)]);
     return;
   }
+  if (hst && hst.await === 'chgreason') {
+    clearState_('h', uid);
+    if (CANCEL_WORDS.test(txt) && txt.length <= 4) { reply([text_('好的，沒有變更。')]); return; }
+    reply([text_(rejectChange_(hst.id, txt, staff.name).msg)]);
+    return;
+  }
   if (hst && hst.await === 'code') {
     clearState_('h', uid);
     if (CANCEL_WORDS.test(txt)) { reply([text_('好的，沒有變更。')]); return; }
@@ -1482,6 +1546,13 @@ function handleStaffAnswer_(kind, id, txt, staffName) {
     return '如果 ' + id + ' 確定無法安排，請按通知卡上的「無法安排」按鈕，避免誤按。';
   }
   if (kind === 'room') {
+    const f = findRow_(SHEETS.ROOM, '編號', id);
+    if (f && f.data['改自'] && f.data['狀態'] === ST.ROOM_PENDING) {
+      if (OK_WORDS.test(txt) || /^(改好了|已改期|已完成|完成)$/.test(txt)) return confirmChange_(id, staffName).msg;
+      const why = txt.match(/^(?:無法|不能|沒辦法)(?:改期)?[\s:：,，]*([\s\S]*)$/);
+      if (why) return rejectChange_(id, why[1] || txt, staffName).msg;
+      return id + ' 是改期需求：完成請按「已完成改期」，不行請按「無法改期」再傳原因。';
+    }
     if (OK_WORDS.test(txt)) return '請回覆 ' + id + ' 的訂房代號（例如：' + id + ' INS2611-0502）。';
     return confirmRoom_(id, txt, staffName).msg;
   }
@@ -2264,7 +2335,13 @@ function staffRoomBubble_(b, cust) {
       row_(b.from ? '新退房' : '退房', fmtYmd_(b.co) + ' ' + CFG.CHECKOUT_TIME + '（' + b.nights + ' 晚）', b.from ? { bold: true } : undefined),
       row_('人數', b.people + ' 位'),
     ].filter(Boolean) },
-    footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: [
+    footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: b.from ? [
+      { type: 'button', style: 'primary', color: C.plum, height: 'sm',
+        action: { type: 'postback', label: '已完成改期', data: 'a=chgok&id=' + b.id, displayText: b.id + ' 已完成改期' } },
+      { type: 'button', style: 'secondary', height: 'sm',
+        action: { type: 'postback', label: '無法改期', data: 'a=chgno&id=' + b.id, displayText: b.id + ' 無法改期' } },
+      { type: 'text', text: '訂房代號沿用原訂房，不用重新輸入', size: 'xxs', color: C.mute, align: 'center', margin: 'sm' },
+    ] : [
       { type: 'button', style: 'primary', color: C.plum, height: 'sm',
         action: { type: 'postback', label: '輸入訂房代號', data: 'a=code&id=' + b.id, displayText: b.id + ' 輸入訂房代號' } },
       { type: 'button', style: 'secondary', height: 'sm',

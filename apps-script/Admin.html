@@ -533,7 +533,10 @@
 
   function roomCard(b) {
     const pending = b.status === '待處理';
-    const acts = b.status === '已取消' ? '' : `<div class="rec-act">
+    const acts = b.status === '已取消' ? '' : pending && b.from ? `<div class="rec-act">
+      <button class="main" data-act="chgok" data-kind="room" data-id="${esc(b.id)}">已完成改期</button>
+      <button class="del" data-act="chgno" data-kind="room" data-id="${esc(b.id)}">無法改期</button>
+    </div>` : `<div class="rec-act">
       ${pending ? `<button class="main" data-act="code" data-kind="room" data-id="${esc(b.id)}">填入訂房代號並通知客人</button>`
         : `<button data-act="resend" data-kind="room" data-id="${esc(b.id)}">${b.status === '通知失敗' ? '重試發送' : '重新發送'}</button>`}
       <button data-act="edit" data-kind="room" data-id="${esc(b.id)}" style="flex:0 0 64px">修改</button>
@@ -541,7 +544,7 @@
     </div>`;
     return `<div class="rec ${pending ? 'pending' : ''}">
       <div class="rec-top">
-        <div><div class="rec-id">🏨 ${esc(b.id)}・${esc(b.source)}</div>
+        <div><div class="rec-id">${b.from ? '🔁' : '🏨'} ${esc(b.id)}・${esc(b.source)}${b.from ? '・改期（原 ' + esc(b.from) + '）' : ''}</div>
           <div class="rec-name">${esc(b.nameZh)}<small>${esc(b.nameEn)}</small></div>
           <div class="rec-sub">會員 ${esc(b.memberId)}</div></div>
         ${badge(b.status)}
@@ -840,7 +843,7 @@
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const list = b.dataset.kind === 'room' ? S.rooms : S.cars;
     const item = list.find(x => x.id === b.dataset.id); if (!item) return;
-    ({ code: askCode, arrange: confirmArrange, resend: confirmResend, cancel: confirmCancel, edit: editRoom })[b.dataset.act](item, b.dataset.kind);
+    ({ code: askCode, arrange: confirmArrange, resend: confirmResend, cancel: confirmCancel, edit: editRoom, chgok: changeDone, chgno: changeReject })[b.dataset.act](item, b.dataset.kind);
   });
 
   function itemSummary(x, kind) {
@@ -849,6 +852,24 @@
       : `${esc(x.nameZh)}・${esc(x.type)} ${esc(x.flight)}・${esc(fmtDT(x.type === '送機' ? x.pickup : x.ftime))}`;
   }
 
+  function changeDone(b) {
+    openSheet(`<h2>${esc(b.id)} 已完成改期？</h2>
+      <p>${itemSummary(b, 'room')}<br>訂房代號沿用原訂房 ${esc(b.from)}，原本那筆會自動取消，並通知 AGENT。</p>
+      <div class="btns"><button class="btn" id="go">已完成改期</button><button class="btn ghost" id="back">返回</button></div>`);
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => runAction($('go'), 'apiChangeDone', [b.id]);
+  }
+  function changeReject(b) {
+    openSheet(`<h2>${esc(b.id)} 無法改期</h2>
+      <p>原訂房 ${esc(b.from)} 維持不變，原因會轉告 AGENT。</p>
+      <label class="f" for="why">原因</label>
+      <textarea id="why" placeholder="例如：12/20 已客滿"></textarea>
+      <div class="btns" style="margin-top:14px"><button class="btn danger" id="go" disabled>送出</button><button class="btn ghost" id="back">返回</button></div>`);
+    $('why').oninput = () => $('go').disabled = !$('why').value.trim();
+    setTimeout(() => $('why').focus(), 50);
+    $('back').onclick = closeSheet;
+    $('go').onclick = () => runAction($('go'), 'apiChangeReject', [b.id, $('why').value.trim()]);
+  }
   function askCode(b) {
     openSheet(`
       <h2>填入訂房代號</h2>
