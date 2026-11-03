@@ -1591,6 +1591,9 @@ function mdToYmd_(s, after) {
 }
 
 function parsePreBooking_(txt) {
+  // 也接受「會員ID 訂房代號 房型 日期」：80049239 RDD80B SDNK 11/23-11/25 → 換成標準順序
+  const alt = String(txt).trim().match(/^([A-Za-z0-9-]*\d[A-Za-z0-9-]*)\s+(\S{2,40})\s+([SsOo][A-Za-z]{3})\s+(\S+\s*[~～\-–—至到]\s*\S+)(\s+[\s\S]*)?$/);
+  if (alt && !codeToRoom_(alt[2]) && !/^\d{1,4}[\/.]/.test(alt[2])) txt = alt[1] + ' ' + alt[3] + ' ' + alt[4] + ' ' + alt[2] + (alt[5] || '');
   const m = String(txt).trim().match(/^([A-Za-z0-9-]*\d[A-Za-z0-9-]*)\s+([SsOo][A-Za-z]{3})\s+((?:\d{4}[\/.])?\d{1,2}[\/.]\d{1,2})\s*[~～\-–—至到]\s*((?:\d{4}[\/.])?(?:\d{1,2}[\/.])?\d{1,2})(?:\s+(\S{2,40}))?(?:\s+([\s\S]{1,200}))?$/);
   if (!m) return null;
   if (/^\d{1,2}$/.test(m[4])) m[4] = m[3].replace(/\d{1,2}$/, '') + m[4];   // 11/13~17 → 11/13~11/17
