@@ -681,7 +681,7 @@ function bulkAddMembers_(text, agent, staffName) {
       }
       const o = { '會員ID': mid, '中文姓名': zh, '英文姓名': en, '狀態': '未加入', '加入時間': now_(), '登記狀態': REG.PRE, 'AGENT': agent, '綁定人': staffName, '生日': bd };
       newRows.push(head.map(function (h) { return o[h] || ''; }));
-      added.push(mid + ' ' + zh + ' ' + en + (bd ? ' 🎂' + birthdayLabel_(bd) : ''));
+      added.push([mid, zh, en].filter(Boolean).join(' ') + (bd ? ' 🎂' + birthdayLabel_(bd) : ''));
     });
     if (newRows.length) {
       const start = sh.getLastRow() + 1;
@@ -1469,6 +1469,20 @@ function handleHelper_(ev) {
   }
 
   // 預先建立訂房：「80060456 SSNK 11/27~11/30」（後面可加訂房代號）
+  // 新增會員：「80018959 TAI, CHIN MAN」（可加中文名、可多行）
+  const memLines = txt.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+  if (memLines.length && memLines.every(function (l) { return /^\d{6,10}\s+(?:[㐀-鿿豈-﫿]{1,10}\s*)?[A-Za-z][A-Za-z ,.'-]{1,59}$/.test(l); })) {
+    clearState_('h', uid);
+    const res = bulkAddMembers_(txt, '', staff.name);
+    const touched = res.added.concat(res.updated).map(function (x) { return x.split(' ')[0]; });
+    const same = memLines.map(function (l) { return l.split(/\s+/)[0]; }).filter(function (id) { return touched.indexOf(id) < 0 && !res.bad.some(function (b) { return b.indexOf(id) === 0; }); });
+    reply([text_((res.added.length ? '✅ 新增會員 ' + res.added.length + ' 位\n' + res.added.join('\n') : '') +
+      (res.updated.length ? (res.added.length ? '\n\n' : '') + '📝 補上資料 ' + res.updated.length + ' 位\n' + res.updated.join('\n') : '') +
+      (same.length ? (res.added.length || res.updated.length ? '\n\n' : '') + 'ℹ️ 已經在名單裡（沒有變更）：' + same.join('、') : '') +
+      (res.bad.length ? '\n\n⚠ 看不懂：\n' + res.bad.join('\n') : '') +
+      '\n\n之後建房、在後台輸入會員ID 就會自動帶入姓名。')]);
+    return;
+  }
   if (/\n/.test(txt) && parsePreBooking_(txt.split(/\r?\n/)[0].trim())) {
     clearState_('h', uid);
     const res = preBookBatch_(txt, staff.name, '小幫手：');
@@ -1834,7 +1848,7 @@ function pendingList_(withHelp) {
   const regs = pendingRegs_();
   const msgs = [];
   if (withHelp) {
-    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・每天 12:00 通知今天入住、21:00 提醒明天還沒訂的車；也可以傳「今日入住」「明日提醒」隨時查\n・會員生日前一個月 12:00 會提醒；傳「生日」看接下來 60 天的壽星\n・傳「未來預訂」列出所有還沒退房的訂房\n・傳「待處理」查看所有待處理'));
+    msgs.push(text_('使用方式：\n・會員登記：按「輸入會員卡號綁定」，或長按通知回覆卡號\n・訂房：按通知上的「輸入訂房代號」，或回覆「R0012 訂房代號」\n・訂車：按「已訂好車」，或長按通知回覆「已經訂好了」\n・先建立訂房：傳「80060456 SSNK 11/27~11/30 訂房代號」（代號可省略），客人綁定後自動帶入\n・活動海報：直接傳圖片，傳「活動清單」管理\n・每天 12:00 通知今天入住、21:00 提醒明天還沒訂的車；也可以傳「今日入住」「明日提醒」隨時查\n・會員生日前一個月 12:00 會提醒；傳「生日」看接下來 60 天的壽星\n・傳「未來預訂」列出所有還沒退房的訂房\n・新增會員：傳「80018959 TAI, CHIN MAN」（可多行，一行一位）\n・傳「待處理」查看所有待處理'));
   }
   if (!p.rooms.length && !p.cars.length && !regs.length) { msgs.push(text_('目前沒有待處理的事項 👍')); return msgs; }
   const bubbles = regs.map(staffRegBubble_)
